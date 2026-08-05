@@ -1,5 +1,7 @@
 """OpenAI LLM provider."""
 
+from functools import lru_cache
+
 from openai import APIError as OpenAIAPIError
 from openai import OpenAI
 
@@ -49,3 +51,8 @@ class OpenAIProvider(LLMProvider):
 
 def _build_user_message(question: str, context: str) -> str:
     return f"Context:\n{context}\n\nQuestion:\n{question}"
+
+
+@lru_cache
+def get_llm_provider() -> OpenAIProvider:
+    return OpenAIProvider()
