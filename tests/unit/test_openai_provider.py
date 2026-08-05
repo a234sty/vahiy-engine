@@ -6,8 +6,9 @@ import httpx
 import openai
 import pytest
 
+from vahiy_engine.config import settings
 from vahiy_engine.providers.llm.base import LLMProviderError
-from vahiy_engine.providers.llm.openai_provider import DEFAULT_MODEL, OpenAIProvider
+from vahiy_engine.providers.llm.openai_provider import OpenAIProvider
 
 
 def make_fake_client(answer: str = "The answer.") -> MagicMock:
@@ -51,44 +52,46 @@ def test_generate_answer_combines_context_and_question_in_user_message() -> None
     assert user_content.index("[John.1.1]") < user_content.index("What is logos?")
 
 
-def test_generate_answer_uses_default_model() -> None:
+def test_generate_answer_uses_model_from_config_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "openai_model", "gpt-4o-mini-from-config")
     client = make_fake_client()
     provider = OpenAIProvider(client=client)
 
     provider.generate_answer("system", "question", "context")
 
-    assert client.chat.completions.create.call_args.kwargs["model"] == DEFAULT_MODEL
+    assert client.chat.completions.create.call_args.kwargs["model"] == "gpt-4o-mini-from-config"
 
 
-def test_generate_answer_uses_configured_model() -> None:
+def test_generate_answer_uses_explicit_model_over_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "openai_model", "gpt-4o-mini-from-config")
     client = make_fake_client()
-    provider = OpenAIProvider(client=client, model="gpt-4o")
+    provider = OpenAIProvider(client=client, model="gpt-4o-explicit")
 
     provider.generate_answer("system", "question", "context")
 
-    assert client.chat.completions.create.call_args.kwargs["model"] == "gpt-4o"
+    assert client.chat.completions.create.call_args.kwargs["model"] == "gpt-4o-explicit"
 
 
-def test_constructor_raises_when_no_api_key_and_no_client(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+def test_constructor_raises_when_no_api_key_in_config_and_no_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "openai_api_key", None)
 
     with pytest.raises(LLMProviderError):
         OpenAIProvider()
 
 
-def test_constructor_reads_api_key_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key-from-env")
+def test_constructor_reads_api_key_from_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "openai_api_key", "key-from-config")
 
     with patch("vahiy_engine.providers.llm.openai_provider.OpenAI") as mock_openai_cls:
         OpenAIProvider()
 
-    mock_openai_cls.assert_called_once_with(api_key="test-key-from-env")
+    mock_openai_cls.assert_called_once_with(api_key="key-from-config")
 
 
-def test_constructor_prefers_explicit_api_key_over_environment(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("OPENAI_API_KEY", "env-key")
+def test_constructor_prefers_explicit_api_key_over_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "openai_api_key", "key-from-config")
 
     with patch("vahiy_engine.providers.llm.openai_provider.OpenAI") as mock_openai_cls:
         OpenAIProvider(api_key="explicit-key")

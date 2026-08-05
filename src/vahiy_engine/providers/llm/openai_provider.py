@@ -1,13 +1,10 @@
 """OpenAI LLM provider."""
 
-import os
-
 from openai import APIError as OpenAIAPIError
 from openai import OpenAI
 
+from vahiy_engine.config import settings
 from vahiy_engine.providers.llm.base import LLMProvider, LLMProviderError
-
-DEFAULT_MODEL = "gpt-4o-mini"
 
 
 class OpenAIProvider(LLMProvider):
@@ -16,16 +13,16 @@ class OpenAIProvider(LLMProvider):
     def __init__(
         self,
         api_key: str | None = None,
-        model: str = DEFAULT_MODEL,
+        model: str | None = None,
         client: OpenAI | None = None,
     ) -> None:
-        self._model = model
+        self._model = model or settings.openai_model
 
         if client is not None:
             self._client = client
             return
 
-        resolved_key = api_key or os.environ.get("OPENAI_API_KEY")
+        resolved_key = api_key or settings.openai_api_key
         if not resolved_key:
             raise LLMProviderError("OPENAI_API_KEY is not set")
 
