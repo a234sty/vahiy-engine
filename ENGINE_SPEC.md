@@ -120,3 +120,70 @@ The engine must never generate theological opinions by itself.
 Its responsibility is retrieval, context building, and orchestration.
 
 Reasoning is delegated to the AI model using the retrieved corpus.
+---
+
+# Public API
+
+Version: v1
+
+The first version of Vahiy Engine exposes only a minimal public API.
+
+The API must remain simple, stable, and well documented.
+
+---
+
+## GET /verse
+
+Returns a single verse.
+
+Parameters:
+
+- osis
+
+Example:
+
+GET /verse?osis=John.3.16
+
+---
+
+## GET /search
+
+Searches Ahit Corpus.
+
+Parameters:
+
+- query
+
+Example:
+
+GET /search?query=logos
+
+---
+
+## POST /chat
+
+Accepts a natural language question.
+
+Request:
+
+{
+    "message": "What does Logos mean in John 1:1?"
+}
+
+Response:
+
+{
+    "answer": "...",
+    "sources": [
+        "John.1.1",
+        "Strong:G3056"
+    ]
+}
+
+---
+
+Every endpoint must return JSON.
+
+Every endpoint must support UTF-8.
+
+Every error response must also return JSON.
