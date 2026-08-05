@@ -96,14 +96,18 @@ def test_post_chat_returns_502_as_json_when_provider_fails() -> None:
 
 def test_post_chat_returns_502_when_no_api_key_is_configured() -> None:
     # No dependency override here: exercises the real get_llm_provider(), which
-    # raises LLMProviderError when settings.openai_api_key is unset.
-    original_key = settings.openai_api_key
+    # falls back to Gemini (the default) and raises LLMProviderError when
+    # neither settings.openai_api_key nor settings.gemini_api_key is set.
+    original_openai_key = settings.openai_api_key
+    original_gemini_key = settings.gemini_api_key
     settings.openai_api_key = None
+    settings.gemini_api_key = None
     get_llm_provider.cache_clear()
     try:
         response = client.post("/chat", json={"message": "beginning"})
     finally:
-        settings.openai_api_key = original_key
+        settings.openai_api_key = original_openai_key
+        settings.gemini_api_key = original_gemini_key
         get_llm_provider.cache_clear()
 
     assert response.status_code == 502

@@ -4,8 +4,8 @@ from fastapi import APIRouter, Depends
 
 from vahiy_engine.api.schemas.chat import ChatRequest, ChatResponse, ChatSourceItem
 from vahiy_engine.pipeline.chat_pipeline import run_chat_pipeline
+from vahiy_engine.providers.llm import get_llm_provider
 from vahiy_engine.providers.llm.base import LLMProvider
-from vahiy_engine.providers.llm.openai_provider import get_llm_provider
 from vahiy_engine.sources.ahit.client import AhitCorpusClient, get_ahit_client
 
 router = APIRouter()

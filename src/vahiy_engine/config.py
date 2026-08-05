@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     # (no VAHIY_ prefix), so validation_alias overrides env_prefix per field.
     openai_api_key: str | None = Field(default=None, validation_alias="OPENAI_API_KEY")
     openai_model: str = Field(default="gpt-4o-mini", validation_alias="OPENAI_MODEL")
+    gemini_api_key: str | None = Field(default=None, validation_alias="GEMINI_API_KEY")
+    gemini_model: str = Field(default="gemini-2.5-flash", validation_alias="GEMINI_MODEL")
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="VAHIY_", extra="ignore")
 

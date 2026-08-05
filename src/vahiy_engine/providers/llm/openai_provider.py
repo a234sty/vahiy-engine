@@ -1,12 +1,10 @@
 """OpenAI LLM provider."""
 
-from functools import lru_cache
-
 from openai import APIError as OpenAIAPIError
 from openai import OpenAI
 
 from vahiy_engine.config import settings
-from vahiy_engine.providers.llm.base import LLMProvider, LLMProviderError
+from vahiy_engine.providers.llm.base import LLMProvider, LLMProviderError, build_user_message
 
 
 class OpenAIProvider(LLMProvider):
@@ -36,7 +34,7 @@ class OpenAIProvider(LLMProvider):
                 model=self._model,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": _build_user_message(question, context)},
+                    {"role": "user", "content": build_user_message(question, context)},
                 ],
             )
         except OpenAIAPIError as exc:
@@ -47,12 +45,3 @@ class OpenAIProvider(LLMProvider):
             raise LLMProviderError("OpenAI response did not contain an answer")
 
         return answer
-
-
-def _build_user_message(question: str, context: str) -> str:
-    return f"Context:\n{context}\n\nQuestion:\n{question}"
-
-
-@lru_cache
-def get_llm_provider() -> OpenAIProvider:
-    return OpenAIProvider()
