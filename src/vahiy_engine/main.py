@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.exceptions import HTTPException
 
 from vahiy_engine.api.errors import http_exception_handler, unhandled_exception_handler
-from vahiy_engine.api.routes import health
+from vahiy_engine.api.routes import health, verse
 from vahiy_engine.config import settings
 from vahiy_engine.logging import configure_logging
 
@@ -18,6 +18,7 @@ def create_app() -> FastAPI:
     app.add_exception_handler(Exception, unhandled_exception_handler)
 
     app.include_router(health.router)
+    app.include_router(verse.router)
 
     return app
 

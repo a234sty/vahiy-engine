@@ -34,6 +34,10 @@ src = ["src", "tests"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
+[tool.ruff.lint.per-file-ignores]
+# FastAPI's Depends()/Query() default-argument pattern is idiomatic, not a real mutable-default bug.
+"src/vahiy_engine/api/routes/*.py" = ["B008"]
+
 [tool.black]
 line-length = 100
 target-version = ["py311"]
