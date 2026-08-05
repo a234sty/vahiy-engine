@@ -1,0 +1,25 @@
+"""FastAPI application entrypoint for Vahiy Engine."""
+
+from fastapi import FastAPI
+from fastapi.exceptions import HTTPException
+
+from vahiy_engine.api.errors import http_exception_handler, unhandled_exception_handler
+from vahiy_engine.api.routes import health
+from vahiy_engine.config import settings
+from vahiy_engine.logging import configure_logging
+
+
+def create_app() -> FastAPI:
+    configure_logging()
+
+    app = FastAPI(title=settings.app_name, version=settings.app_version)
+
+    app.add_exception_handler(HTTPException, http_exception_handler)
+    app.add_exception_handler(Exception, unhandled_exception_handler)
+
+    app.include_router(health.router)
+
+    return app
+
+
+app = create_app()

@@ -1,0 +1,1 @@
+"""Septuagint cross-text plugin."""
