@@ -85,3 +85,38 @@ Vahiy AI App
    ┌────┴────┐
    ▼         ▼
 Ahit Corpus  OpenAI API
+---
+
+# Responsibilities
+
+The Vahiy Engine has one responsibility:
+
+Transform a user's question into a reliable, source-based answer.
+
+To accomplish this, every request follows the same pipeline.
+
+Pipeline:
+
+1. Receive the user's request.
+
+2. Analyze the request.
+
+3. Search Ahit Corpus.
+
+4. Retrieve every relevant source.
+
+5. Build an AI context.
+
+6. Send the context to the configured Large Language Model.
+
+7. Receive the generated answer.
+
+8. Attach the supporting sources.
+
+9. Return the final response to the application.
+
+The engine must never generate theological opinions by itself.
+
+Its responsibility is retrieval, context building, and orchestration.
+
+Reasoning is delegated to the AI model using the retrieved corpus.
