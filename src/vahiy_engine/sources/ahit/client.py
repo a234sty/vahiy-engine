@@ -1,7 +1,10 @@
 """Ahit Corpus client implementation."""
 
+from collections.abc import Iterator
+from functools import lru_cache
 from pathlib import Path
 
+from vahiy_engine.config import settings
 from vahiy_engine.sources.client import CorpusClient
 from vahiy_engine.sources.loaders.base import BookLoader
 from vahiy_engine.sources.loaders.json_loader import JsonBookLoader
@@ -37,7 +40,29 @@ class AhitCorpusClient(CorpusClient):
             text=text,
         )
 
+    def iter_verses(self) -> Iterator[Verse]:
+        for book in self._list_books():
+            chapters = self._load_book(book)
+            for chapter_number in sorted(chapters):
+                for verse_number in sorted(chapters[chapter_number]):
+                    osis = f"{book}.{chapter_number}.{verse_number}"
+                    yield Verse(
+                        osis=osis,
+                        book=book,
+                        chapter=chapter_number,
+                        verse=verse_number,
+                        text=chapters[chapter_number][verse_number],
+                    )
+
+    def _list_books(self) -> list[str]:
+        return sorted(f.stem for f in self._corpus_path.glob("*.json"))
+
     def _load_book(self, book: str) -> dict[int, dict[int, str]]:
         if book not in self._book_cache:
             self._book_cache[book] = self._loader.load(self._corpus_path, book)
         return self._book_cache[book]
+
+
+@lru_cache
+def get_ahit_client() -> AhitCorpusClient:
+    return AhitCorpusClient(corpus_path=Path(settings.ahit_corpus_path))
