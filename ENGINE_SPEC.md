@@ -61,3 +61,27 @@ Vahiy Engine searches and prepares data.
 The AI interprets the retrieved context.
 
 The application only displays the result.
+---
+
+# Project Architecture
+
+Vahiy Engine is designed as an independent backend service.
+
+It communicates with:
+
+- Ahit Corpus
+- OpenAI API (or another supported LLM provider)
+- The Vahiy AI application
+- Authentication service (future)
+- Database (future)
+
+Architecture:
+
+Vahiy AI App
+        │
+        ▼
+   Vahiy Engine
+        │
+   ┌────┴────┐
+   ▼         ▼
+Ahit Corpus  OpenAI API
