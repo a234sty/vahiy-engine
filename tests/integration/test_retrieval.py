@@ -28,9 +28,14 @@ def test_retrieve_ranking_matches_across_multiple_books() -> None:
 
     assert [r.osis for r in results] == [
         "John.1.1",
+        "Deut.6.4",
+        "Eph.2.8",
         "Gen.1.1",
         "Gen.1.2",
         "Gen.1.3",
         "John.3.16",
+        "Mark.12.29",
+        "Rev.21.4",
+        "Rom.10.9",
     ]
-    assert [r.score for r in results] == [2, 1, 1, 1, 1]
+    assert [r.score for r in results] == [2, 1, 1, 1, 1, 1, 1, 1, 1, 1]

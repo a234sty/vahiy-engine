@@ -98,7 +98,7 @@ def test_natural_language_question_retrieves_relevant_verse_end_to_end() -> None
 
     result = run_chat_pipeline(get_ahit_client(), provider, "Who created the heaven and the earth?")
 
-    assert [s.osis for s in result.sources] == ["Gen.1.1", "Gen.1.2"]
+    assert [s.osis for s in result.sources] == ["Gen.1.1", "Acts.4.12", "Gen.1.2"]
     _, question, context = provider.calls[0]
     assert question == "Who created the heaven and the earth?"
     assert "[Gen.1.1]" in context

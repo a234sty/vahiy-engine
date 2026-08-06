@@ -175,3 +175,26 @@ def test_search_ignores_punctuation_differences_for_exact_phrase_matching(
     results = search(corpus, "the Word and the Word was with God")
 
     assert [r.verse.osis for r in results] == ["John.1.1"]
+
+
+def test_search_keyword_fallback_weights_rare_terms_above_common_ones() -> None:
+    # "Aaa" and "Zzz" tie at raw score 2 ("Aaa" has two "god"s; "Zzz" has one
+    # "god" and one "one"). Without rarity weighting, the (book, chapter,
+    # verse) tie-break would rank "Aaa" first purely alphabetically. "one" is
+    # far rarer across this corpus than "god" (appears in 1 of 4 verses vs.
+    # all 4), so it should carry more weight — "Zzz" must rank first despite
+    # sorting last alphabetically, proving the ranking is rarity-driven and
+    # not just an accident of the tie-break order.
+    corpus = FakeCorpus(
+        [
+            make_verse("Aaa", 1, 1, "God is great and God is good"),
+            make_verse("Zzz", 1, 1, "our God is one"),
+            make_verse("Mmm", 1, 1, "God is with us"),
+            make_verse("Nnn", 1, 1, "the God of our fathers"),
+        ]
+    )
+
+    results = search(corpus, "God one")
+
+    assert [r.verse.osis for r in results][:2] == ["Zzz.1.1", "Aaa.1.1"]
+    assert [r.score for r in results][:2] == [2, 2]
