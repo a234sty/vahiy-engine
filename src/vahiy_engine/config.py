@@ -9,6 +9,11 @@ class Settings(BaseSettings):
     app_version: str = "1.0.0"
     environment: str = "development"
     ahit_corpus_path: str = "data/corpus/ahit/bible"
+    # Root of a local checkout of the separate ahit-corpus repository. Unset
+    # by default: only the bundled KJV sample data (ahit_corpus_path above)
+    # is available then. When set, additional translations (YTC, SBLGNT)
+    # register automatically if their real subdirectories are present.
+    ahit_corpus_root: str | None = None
 
     # Provider credentials/model names use their SDK-conventional env var names
     # (no VAHIY_ prefix), so validation_alias overrides env_prefix per field.

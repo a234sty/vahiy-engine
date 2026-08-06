@@ -23,7 +23,12 @@ async def post_chat(
         answer=result.answer,
         sources=[
             ChatSourceItem(
-                osis=s.osis, chapter=s.chapter, verse=s.verse, text=s.text, score=s.score
+                osis=s.osis,
+                chapter=s.chapter,
+                verse=s.verse,
+                text=s.text,
+                score=s.score,
+                translation=s.translation,
             )
             for s in result.sources
         ],

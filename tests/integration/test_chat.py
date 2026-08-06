@@ -53,7 +53,7 @@ def test_post_chat_source_items_have_required_fields() -> None:
     response = client.post("/chat", json={"message": "beginning"})
 
     for item in response.json()["sources"]:
-        assert set(item.keys()) == {"osis", "chapter", "verse", "text", "score"}
+        assert set(item.keys()) == {"osis", "chapter", "verse", "text", "score", "translation"}
 
 
 def test_post_chat_passes_message_through_as_the_question() -> None:

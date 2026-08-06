@@ -27,6 +27,7 @@ async def get_search(
                 verse=r.verse.verse,
                 text=r.verse.text,
                 score=r.score,
+                translation=r.verse.translation,
             )
             for r in results
         ],

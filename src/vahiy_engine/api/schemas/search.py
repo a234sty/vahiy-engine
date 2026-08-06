@@ -9,6 +9,7 @@ class SearchResultItem(BaseModel):
     verse: int
     text: str
     score: int
+    translation: str
 
 
 class SearchResponse(BaseModel):

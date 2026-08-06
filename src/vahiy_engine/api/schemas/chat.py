@@ -13,6 +13,7 @@ class ChatSourceItem(BaseModel):
     verse: int
     text: str
     score: int
+    translation: str
 
 
 class ChatResponse(BaseModel):

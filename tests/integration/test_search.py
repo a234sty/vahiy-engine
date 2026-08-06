@@ -21,7 +21,7 @@ def test_search_results_include_required_fields() -> None:
     response = client.get("/search", params={"query": "beginning"})
 
     for item in response.json()["results"]:
-        assert set(item.keys()) == {"osis", "chapter", "verse", "text", "score"}
+        assert set(item.keys()) == {"osis", "chapter", "verse", "text", "score", "translation"}
         assert item["score"] >= 1
 
 

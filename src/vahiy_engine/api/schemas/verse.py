@@ -8,3 +8,4 @@ class VerseResponse(BaseModel):
     chapter: int
     verse: int
     text: str
+    translation: str

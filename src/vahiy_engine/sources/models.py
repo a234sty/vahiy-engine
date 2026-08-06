@@ -9,3 +9,4 @@ class Verse(BaseModel):
     chapter: int
     verse: int
     text: str
+    translation: str = "KJV"

@@ -21,6 +21,7 @@ class Source:
     verse: int
     text: str
     score: int
+    translation: str = "KJV"
 
 
 def retrieve(corpus: CorpusClient, query: str, limit: int) -> list[Source]:
@@ -49,4 +50,5 @@ def _to_source(result: SearchResult) -> Source:
         verse=result.verse.verse,
         text=result.verse.text,
         score=result.score,
+        translation=result.verse.translation,
     )
