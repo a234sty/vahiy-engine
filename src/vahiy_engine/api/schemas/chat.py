@@ -16,6 +16,14 @@ class ChatSourceItem(BaseModel):
     translation: str
 
 
+class ChatLexiconSourceItem(BaseModel):
+    strongs_number: str
+    lemma: str
+    transliteration: str | None
+    definition: str
+
+
 class ChatResponse(BaseModel):
     answer: str
     sources: list[ChatSourceItem]
+    lexicon_sources: list[ChatLexiconSourceItem] = []

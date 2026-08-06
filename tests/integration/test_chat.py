@@ -1,10 +1,14 @@
 """Integration tests for the /chat endpoint. No real network/LLM calls are made."""
 
+from collections.abc import Iterator
+
 import pytest
 from fastapi.testclient import TestClient
 
-from vahiy_engine.api.routes.chat import get_llm_provider
+from vahiy_engine.api.routes.chat import get_lexicon_client, get_llm_provider
 from vahiy_engine.config import settings
+from vahiy_engine.lexicon.client import LexiconClient
+from vahiy_engine.lexicon.models import LexiconEntry
 from vahiy_engine.main import app
 from vahiy_engine.providers.llm.base import LLMProvider, LLMProviderError
 
@@ -26,14 +30,37 @@ class FakeProvider(LLMProvider):
         return self.answer
 
 
+class FakeLexiconClient(LexiconClient):
+    """In-memory lexicon for exercising the endpoint without a real corpus."""
+
+    def __init__(self, entries: list[LexiconEntry]) -> None:
+        self._entries = entries
+
+    def get_entry(self, strongs_number: str) -> LexiconEntry:
+        for entry in self._entries:
+            if entry.strongs_number == strongs_number:
+                return entry
+        raise LookupError(strongs_number)
+
+    def iter_entries(self, language: str | None = None) -> Iterator[LexiconEntry]:
+        for entry in self._entries:
+            if language is None or entry.language == language:
+                yield entry
+
+
 @pytest.fixture(autouse=True)
 def clear_provider_override():
     yield
     app.dependency_overrides.pop(get_llm_provider, None)
+    app.dependency_overrides.pop(get_lexicon_client, None)
 
 
 def use_provider(provider: FakeProvider) -> None:
     app.dependency_overrides[get_llm_provider] = lambda: provider
+
+
+def use_lexicon(lexicon: LexiconClient) -> None:
+    app.dependency_overrides[get_lexicon_client] = lambda: lexicon
 
 
 def test_post_chat_returns_answer_and_sources() -> None:
@@ -112,3 +139,60 @@ def test_post_chat_returns_502_when_no_api_key_is_configured() -> None:
 
     assert response.status_code == 502
     assert "error" in response.json()
+
+
+# --- Lexicon sources (ENGINE_SPEC.md's "Strong:G3056" example) ---
+
+
+def make_logos_entry() -> LexiconEntry:
+    return LexiconEntry(
+        strongs_number="G3056",
+        language="greek",
+        lemma="λόγος",
+        transliteration="lógos",
+        definition="something said",
+    )
+
+
+def test_post_chat_returns_empty_lexicon_sources_when_no_lexicon_is_registered() -> None:
+    # No override here: exercises the real get_lexicon_client(), which finds
+    # no ahit-corpus lexicon files in this test environment and so registers
+    # nothing — a question naming a real Greek word still can't cite one.
+    use_provider(FakeProvider())
+
+    response = client.post("/chat", json={"message": "What does logos mean?"})
+
+    assert response.status_code == 200
+    assert response.json()["lexicon_sources"] == []
+
+
+def test_post_chat_cites_a_matching_lexicon_term() -> None:
+    use_provider(FakeProvider("Logos means 'word' — see John 1:1."))
+    use_lexicon(FakeLexiconClient([make_logos_entry()]))
+
+    response = client.post("/chat", json={"message": "What does logos mean?"})
+
+    assert response.status_code == 200
+    lexicon_sources = response.json()["lexicon_sources"]
+    assert len(lexicon_sources) == 1
+    assert lexicon_sources[0]["strongs_number"] == "G3056"
+    assert lexicon_sources[0]["lemma"] == "λόγος"
+
+
+def test_post_chat_lexicon_source_items_have_required_fields() -> None:
+    use_provider(FakeProvider())
+    use_lexicon(FakeLexiconClient([make_logos_entry()]))
+
+    response = client.post("/chat", json={"message": "What does logos mean?"})
+
+    for item in response.json()["lexicon_sources"]:
+        assert set(item.keys()) == {"strongs_number", "lemma", "transliteration", "definition"}
+
+
+def test_post_chat_no_matching_lexicon_term_returns_empty_list() -> None:
+    use_provider(FakeProvider())
+    use_lexicon(FakeLexiconClient([make_logos_entry()]))
+
+    response = client.post("/chat", json={"message": "beginning"})
+
+    assert response.json()["lexicon_sources"] == []

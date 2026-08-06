@@ -1,5 +1,6 @@
 """Unit tests for the context builder."""
 
+from vahiy_engine.lexicon.models import LexiconEntry
 from vahiy_engine.rag.context_builder import build_context
 from vahiy_engine.rag.retrieval import Source
 
@@ -8,6 +9,18 @@ def make_source(osis: str, text: str, score: int = 1) -> Source:
     book, chapter, verse = osis.split(".")
     return Source(
         osis=osis, book=book, chapter=int(chapter), verse=int(verse), text=text, score=score
+    )
+
+
+def make_lexicon_entry(
+    strongs_number: str = "G3056", lemma: str = "λόγος", definition: str = "something said"
+) -> LexiconEntry:
+    return LexiconEntry(
+        strongs_number=strongs_number,
+        language="greek",
+        lemma=lemma,
+        transliteration="lógos",
+        definition=definition,
     )
 
 
@@ -98,3 +111,46 @@ def test_build_context_does_not_reorder_sources_by_score() -> None:
     context = build_context(sources)
 
     assert context.index("Gen.1.3") < context.index("Gen.1.1")
+
+
+def test_build_context_with_no_lexicon_entries_argument_is_unaffected() -> None:
+    source = make_source("Gen.1.1", "In the beginning God created the heaven and the earth.")
+
+    assert build_context([source]) == build_context([source], None)
+    assert build_context([source]) == build_context([source], [])
+
+
+def test_build_context_renders_lexicon_entries_after_verse_sources() -> None:
+    source = make_source("John.1.1", "In the beginning was the Word.")
+    entry = make_lexicon_entry()
+
+    context = build_context([source], [entry])
+
+    assert context.index("John.1.1") < context.index("Strong:G3056")
+
+
+def test_build_context_lexicon_entry_exact_format() -> None:
+    entry = make_lexicon_entry()
+
+    context = build_context([], [entry])
+
+    assert context == "[Strong:G3056] λόγος (lógos): something said"
+
+
+def test_build_context_with_only_lexicon_entries_and_no_sources() -> None:
+    entry = make_lexicon_entry()
+
+    context = build_context([], [entry])
+
+    assert "Strong:G3056" in context
+
+
+def test_build_context_multiple_lexicon_entries_each_get_their_own_block() -> None:
+    logos = make_lexicon_entry("G3056", "λόγος", "something said")
+    ab = make_lexicon_entry("H1", "אָב", "father")
+
+    blocks = build_context([], [logos, ab]).split("\n\n")
+
+    assert len(blocks) == 2
+    assert "G3056" in blocks[0]
+    assert "H1" in blocks[1]

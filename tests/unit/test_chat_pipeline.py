@@ -5,6 +5,8 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
+from vahiy_engine.lexicon.client import LexiconClient
+from vahiy_engine.lexicon.models import LexiconEntry
 from vahiy_engine.pipeline.chat_pipeline import (
     DEFAULT_LIMIT,
     DEFAULT_SYSTEM_PROMPT,
@@ -90,7 +92,7 @@ def test_run_chat_pipeline_calls_components_in_order_with_correct_arguments() ->
 
     assert manager.mock_calls == [
         call.retrieve(corpus, "What is logos?", 3),
-        call.build_context(sources),
+        call.build_context(sources, []),
         call.generate_answer(DEFAULT_SYSTEM_PROMPT, "What is logos?", "built context"),
     ]
     assert result == ChatResult(answer="The answer.", sources=sources)
@@ -163,7 +165,8 @@ def test_run_chat_pipeline_reference_input_resolves_via_get_verse_and_skips_retr
             Source(
                 osis="Gen.1.1", book="Gen", chapter=1, verse=1, text="In the beginning...", score=1
             )
-        ]
+        ],
+        [],
     )
 
 
@@ -289,3 +292,114 @@ def test_chat_pipeline_module_has_no_fastapi_dependency() -> None:
     import vahiy_engine.pipeline.chat_pipeline as module
 
     assert "fastapi" not in inspect.getsource(module)
+
+
+# --- Lexicon wiring: mock find_lexicon_term/build_context directly ---
+
+
+def make_lexicon_entry(strongs_number: str = "G3056") -> LexiconEntry:
+    return LexiconEntry(
+        strongs_number=strongs_number,
+        language="greek",
+        lemma="λόγος",
+        transliteration="lógos",
+        definition="something said",
+    )
+
+
+def test_run_chat_pipeline_without_lexicon_client_never_calls_find_lexicon_term() -> None:
+    provider = MagicMock()
+    provider.generate_answer.return_value = "answer"
+
+    with (
+        patch("vahiy_engine.pipeline.chat_pipeline.retrieve", return_value=[]),
+        patch("vahiy_engine.pipeline.chat_pipeline.build_context", return_value="ctx"),
+        patch("vahiy_engine.pipeline.chat_pipeline.find_lexicon_term") as mock_find,
+    ):
+        result = run_chat_pipeline(MagicMock(), provider, "What is logos?")
+
+    mock_find.assert_not_called()
+    assert result.lexicon_entries == []
+
+
+def test_run_chat_pipeline_passes_matched_lexicon_entry_to_build_context() -> None:
+    provider = MagicMock()
+    provider.generate_answer.return_value = "answer"
+    entry = make_lexicon_entry()
+
+    with (
+        patch("vahiy_engine.pipeline.chat_pipeline.retrieve", return_value=[]),
+        patch(
+            "vahiy_engine.pipeline.chat_pipeline.build_context", return_value="ctx"
+        ) as mock_build_context,
+        patch("vahiy_engine.pipeline.chat_pipeline.find_lexicon_term", return_value=entry),
+    ):
+        result = run_chat_pipeline(MagicMock(), provider, "What is logos?", lexicon=MagicMock())
+
+    mock_build_context.assert_called_once_with([], [entry])
+    assert result.lexicon_entries == [entry]
+
+
+def test_run_chat_pipeline_no_lexicon_match_passes_empty_list() -> None:
+    provider = MagicMock()
+    provider.generate_answer.return_value = "answer"
+
+    with (
+        patch("vahiy_engine.pipeline.chat_pipeline.retrieve", return_value=[]),
+        patch(
+            "vahiy_engine.pipeline.chat_pipeline.build_context", return_value="ctx"
+        ) as mock_build_context,
+        patch("vahiy_engine.pipeline.chat_pipeline.find_lexicon_term", return_value=None),
+    ):
+        result = run_chat_pipeline(MagicMock(), provider, "no match", lexicon=MagicMock())
+
+    mock_build_context.assert_called_once_with([], [])
+    assert result.lexicon_entries == []
+
+
+# --- Lexicon wiring: end-to-end with a real FakeLexiconClient ---
+
+
+class FakeLexiconClient(LexiconClient):
+    def __init__(self, entries: list[LexiconEntry]) -> None:
+        self._entries = entries
+
+    def get_entry(self, strongs_number: str) -> LexiconEntry:
+        for entry in self._entries:
+            if entry.strongs_number == strongs_number:
+                return entry
+        raise LookupError(strongs_number)
+
+    def iter_entries(self, language: str | None = None) -> Iterator[LexiconEntry]:
+        for entry in self._entries:
+            if language is None or entry.language == language:
+                yield entry
+
+
+def test_run_chat_pipeline_end_to_end_cites_verse_and_lexicon_source_together(
+    corpus: FakeCorpus,
+) -> None:
+    # Mirrors ENGINE_SPEC.md's own worked example: a question naming both a
+    # verse and a Greek word should cite both kinds of source together.
+    lexicon = FakeLexiconClient([make_lexicon_entry()])
+    provider = FakeProvider("Logos means 'word' — see John 1:1.")
+
+    result = run_chat_pipeline(corpus, provider, "What does logos mean?", lexicon=lexicon)
+
+    assert result.lexicon_entries == [make_lexicon_entry()]
+    _, _, context = provider.calls[0]
+    assert "[Strong:G3056]" in context
+    assert "something said" in context
+
+
+def test_run_chat_pipeline_end_to_end_no_lexicon_match_leaves_entries_empty(
+    corpus: FakeCorpus,
+) -> None:
+    lexicon = FakeLexiconClient([make_lexicon_entry()])
+    provider = FakeProvider("answer")
+
+    result = run_chat_pipeline(corpus, provider, "beginning", lexicon=lexicon)
+
+    assert result.lexicon_entries == []
+    _, _, context = provider.calls[0]
+    assert "Strong:" not in context
