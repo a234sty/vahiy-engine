@@ -31,10 +31,16 @@ class TranslationSource:
     `paths` may list more than one directory — e.g. in ahit-corpus, YTC's Old
     and New Testament books live in separate directories but form one
     logical translation.
+
+    `exclude` skips specific file stems that live alongside real book files
+    but aren't books themselves — e.g. ahit-corpus's bible/ot/books/ directory
+    holds a VerseMap.xml (a WLC-to-KJV versification cross-reference, not
+    Bible text) next to the real per-book XML files.
     """
 
     paths: list[Path]
     loader: BookLoader
+    exclude: frozenset[str] = frozenset()
 
 
 class AhitCorpusClient(CorpusClient):
@@ -103,17 +109,19 @@ class AhitCorpusClient(CorpusClient):
 
     def _list_books(self, translation_id: str) -> list[str]:
         source = self._source(translation_id)
+        pattern = f"*.{source.loader.file_extension}"
         books: set[str] = set()
         for root in source.paths:
-            books.update(f.stem for f in root.glob("*.json"))
+            books.update(f.stem for f in root.glob(pattern) if f.stem not in source.exclude)
         return sorted(books)
 
     def _load_book(self, translation_id: str, book: str) -> dict[int, dict[int, str]]:
         cache_key = (translation_id, book)
         if cache_key not in self._book_cache:
             source = self._source(translation_id)
+            filename = f"{book}.{source.loader.file_extension}"
             for root in source.paths:
-                if (root / f"{book}.json").is_file():
+                if (root / filename).is_file():
                     self._book_cache[cache_key] = source.loader.load(root, book)
                     break
             else:

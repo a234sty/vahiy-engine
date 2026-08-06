@@ -9,6 +9,8 @@ from vahiy_engine.sources.loaders.base import BookLoader
 class JsonBookLoader(BookLoader):
     """Loads a book from a '<book>.json' file shaped as {"chapters": {"1": {"1": "..."}}}."""
 
+    file_extension = "json"
+
     def load(self, corpus_path: Path, book: str) -> dict[int, dict[int, str]]:
         book_file = corpus_path / f"{book}.json"
         if not book_file.is_file():

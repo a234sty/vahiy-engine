@@ -11,9 +11,24 @@ from vahiy_engine.sources.ahit.client import (
     UnknownTranslationError,
     VerseNotFoundError,
 )
+from vahiy_engine.sources.loaders.base import BookLoader
 from vahiy_engine.sources.loaders.json_loader import JsonBookLoader
 from vahiy_engine.sources.loaders.verse_list_json_loader import VerseListJsonLoader
 from vahiy_engine.sources.osis import parse_osis
+
+
+class FakeXmlLoader(BookLoader):
+    """Minimal non-JSON loader, purely to prove file_extension-based discovery
+    is generic — no real XML parsing here (that's OsisXmlLoader)."""
+
+    file_extension = "xml"
+
+    def load(self, corpus_path: Path, book: str) -> dict[int, dict[int, str]]:
+        book_file = corpus_path / f"{book}.xml"
+        if not book_file.is_file():
+            raise FileNotFoundError(f"No corpus file found for book '{book}' at {book_file}")
+        text = book_file.read_text(encoding="utf-8")
+        return {1: {1: text}}
 
 
 def write_kjv_style_book(directory: Path, book: str, text: str) -> None:
@@ -166,3 +181,39 @@ def test_translation_can_span_multiple_root_directories(tmp_path: Path) -> None:
 
     assert genesis.text == "OT text"
     assert john.text == "NT text"
+
+
+# --- Non-JSON loaders (file_extension) and excluding non-book files ---
+
+
+def test_translation_source_discovers_books_using_the_loaders_file_extension(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "Gen.xml").write_text("xml content", encoding="utf-8")
+    (tmp_path / "Gen.json").write_text("{}", encoding="utf-8")  # must be ignored: wrong extension
+
+    client = AhitCorpusClient(
+        translations={"WLC": TranslationSource(paths=[tmp_path], loader=FakeXmlLoader())},
+        default_translation="WLC",
+    )
+
+    verse = client.get_verse(parse_osis("Gen.1.1"))
+
+    assert verse.text == "xml content"
+    assert [v.osis for v in client.iter_verses()] == ["Gen.1.1"]
+
+
+def test_translation_source_excludes_named_files_from_discovery(tmp_path: Path) -> None:
+    (tmp_path / "Gen.xml").write_text("real book", encoding="utf-8")
+    (tmp_path / "VerseMap.xml").write_text("not a book", encoding="utf-8")
+
+    client = AhitCorpusClient(
+        translations={
+            "WLC": TranslationSource(
+                paths=[tmp_path], loader=FakeXmlLoader(), exclude=frozenset({"VerseMap"})
+            )
+        },
+        default_translation="WLC",
+    )
+
+    assert [v.osis for v in client.iter_verses()] == ["Gen.1.1"]

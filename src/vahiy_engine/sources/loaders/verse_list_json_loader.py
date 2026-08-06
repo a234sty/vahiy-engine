@@ -26,6 +26,8 @@ from vahiy_engine.sources.loaders.base import BookLoader
 class VerseListJsonLoader(BookLoader):
     """Loads a book from ahit-corpus's `{"metadata": ..., "chapters": {"1": [...]}}` shape."""
 
+    file_extension = "json"
+
     def load(self, corpus_path: Path, book: str) -> dict[int, dict[int, str]]:
         book_file = corpus_path / f"{book}.json"
         if not book_file.is_file():
