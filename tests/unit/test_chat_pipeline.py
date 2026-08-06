@@ -13,6 +13,7 @@ from vahiy_engine.pipeline.chat_pipeline import (
 )
 from vahiy_engine.providers.llm.base import LLMProvider
 from vahiy_engine.rag.retrieval import Source
+from vahiy_engine.sources.ahit.client import VerseNotFoundError
 from vahiy_engine.sources.client import CorpusClient
 from vahiy_engine.sources.models import Verse
 from vahiy_engine.sources.osis import OsisReference
@@ -32,7 +33,14 @@ class FakeCorpus(CorpusClient):
         self._verses = verses
 
     def get_verse(self, reference: OsisReference) -> Verse:
-        raise NotImplementedError
+        for verse in self._verses:
+            if (verse.book, verse.chapter, verse.verse) == (
+                reference.book,
+                reference.chapter,
+                reference.verse,
+            ):
+                return verse
+        raise VerseNotFoundError(f"Verse '{reference.osis}' was not found")
 
     def iter_verses(self) -> Iterator[Verse]:
         yield from self._verses
@@ -129,6 +137,66 @@ def test_run_chat_pipeline_returns_sources_from_retrieval_unchanged() -> None:
     assert result.sources == sources
 
 
+# --- Reference-path branching: mock retrieve()/build_context()/corpus.get_verse ---
+
+
+def test_run_chat_pipeline_reference_input_resolves_via_get_verse_and_skips_retrieve() -> None:
+    corpus = MagicMock()
+    corpus.get_verse.return_value = Verse(
+        osis="Gen.1.1", book="Gen", chapter=1, verse=1, text="In the beginning..."
+    )
+    provider = MagicMock()
+    provider.generate_answer.return_value = "answer"
+
+    with (
+        patch("vahiy_engine.pipeline.chat_pipeline.retrieve") as mock_retrieve,
+        patch(
+            "vahiy_engine.pipeline.chat_pipeline.build_context", return_value="ctx"
+        ) as mock_build_context,
+    ):
+        run_chat_pipeline(corpus, provider, "Gen 1:1")
+
+    mock_retrieve.assert_not_called()
+    corpus.get_verse.assert_called_once_with(OsisReference(book="Gen", chapter=1, verse=1))
+    mock_build_context.assert_called_once_with(
+        [
+            Source(
+                osis="Gen.1.1", book="Gen", chapter=1, verse=1, text="In the beginning...", score=1
+            )
+        ]
+    )
+
+
+def test_run_chat_pipeline_non_reference_input_skips_get_verse() -> None:
+    corpus = MagicMock()
+    provider = MagicMock()
+    provider.generate_answer.return_value = "answer"
+
+    with (
+        patch("vahiy_engine.pipeline.chat_pipeline.retrieve", return_value=[]) as mock_retrieve,
+        patch("vahiy_engine.pipeline.chat_pipeline.build_context", return_value=""),
+    ):
+        run_chat_pipeline(corpus, provider, "What is logos?")
+
+    corpus.get_verse.assert_not_called()
+    mock_retrieve.assert_called_once_with(corpus, "What is logos?", DEFAULT_LIMIT)
+
+
+def test_run_chat_pipeline_reference_not_in_corpus_falls_back_to_retrieve() -> None:
+    corpus = MagicMock()
+    corpus.get_verse.side_effect = VerseNotFoundError("Verse 'Gen.99.99' was not found")
+    provider = MagicMock()
+    provider.generate_answer.return_value = "answer"
+
+    with (
+        patch("vahiy_engine.pipeline.chat_pipeline.retrieve", return_value=[]) as mock_retrieve,
+        patch("vahiy_engine.pipeline.chat_pipeline.build_context", return_value=""),
+    ):
+        run_chat_pipeline(corpus, provider, "Gen 99:99")
+
+    mock_retrieve.assert_called_once_with(corpus, "Gen 99:99", DEFAULT_LIMIT)
+
+
 # --- End-to-end with real retrieve()/build_context() and a fake (non-network) provider ---
 
 
@@ -173,6 +241,46 @@ def test_run_chat_pipeline_provider_called_exactly_once(corpus: FakeCorpus) -> N
     run_chat_pipeline(corpus, provider, "beginning")
 
     assert len(provider.calls) == 1
+
+
+def test_run_chat_pipeline_resolves_reference_end_to_end(corpus: FakeCorpus) -> None:
+    provider = FakeProvider("Genesis 1:1 describes the creation of the heavens and the earth.")
+
+    result = run_chat_pipeline(corpus, provider, "Gen 1:1")
+
+    assert result.sources == [
+        Source(
+            osis="Gen.1.1",
+            book="Gen",
+            chapter=1,
+            verse=1,
+            text="In the beginning God created the heaven and the earth.",
+            score=1,
+        )
+    ]
+    _, question, context = provider.calls[0]
+    assert question == "Gen 1:1"
+    assert context == "[Gen.1.1]\nIn the beginning God created the heaven and the earth."
+
+
+def test_run_chat_pipeline_resolves_turkish_alias_reference_end_to_end(corpus: FakeCorpus) -> None:
+    provider = FakeProvider("answer")
+
+    result = run_chat_pipeline(corpus, provider, "Tekvin 1:1")
+
+    assert [s.osis for s in result.sources] == ["Gen.1.1"]
+
+
+def test_run_chat_pipeline_falls_back_when_referenced_verse_missing(corpus: FakeCorpus) -> None:
+    # "Gen 5:5" parses as a valid reference, but this corpus fixture only has
+    # Gen.1.1 and John.1.1 — the pipeline must fall back to keyword search over
+    # the literal question text rather than error out.
+    provider = FakeProvider("answer")
+
+    result = run_chat_pipeline(corpus, provider, "Gen 5:5")
+
+    assert result.sources == []
+    assert provider.calls[0][1] == "Gen 5:5"
 
 
 def test_chat_pipeline_module_has_no_fastapi_dependency() -> None:
