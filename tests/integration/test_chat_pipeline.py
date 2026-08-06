@@ -91,6 +91,20 @@ def test_keyword_input_is_unaffected_by_reference_detection() -> None:
     assert result.sources == []
 
 
+def test_natural_language_question_retrieves_relevant_verse_end_to_end() -> None:
+    # A real user question, not a reference and not a verbatim phrase from any
+    # verse — the keyword fallback in search() is what makes this resolve.
+    provider = FakeProvider("Genesis 1:1 says God created the heaven and the earth.")
+
+    result = run_chat_pipeline(get_ahit_client(), provider, "Who created the heaven and the earth?")
+
+    assert [s.osis for s in result.sources] == ["Gen.1.1", "Gen.1.2"]
+    _, question, context = provider.calls[0]
+    assert question == "Who created the heaven and the earth?"
+    assert "[Gen.1.1]" in context
+    assert "In the beginning God created the heaven and the earth." in context
+
+
 # --- Reference syntax with no matching verse: graceful fallback, not an error ---
 
 

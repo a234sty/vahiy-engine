@@ -61,10 +61,28 @@ def test_search_supports_exact_phrase_matching(corpus: FakeCorpus) -> None:
     assert {r.verse.osis for r in results} == {"Gen.1.1", "John.1.1"}
 
 
-def test_search_phrase_requires_contiguous_word_order(corpus: FakeCorpus) -> None:
+def test_search_prefers_exact_phrase_over_keyword_fallback(corpus: FakeCorpus) -> None:
+    # "beginning the In" is a reordering of a phrase that DOES appear verbatim
+    # elsewhere ("In the beginning"), so it has zero exact-phrase substring
+    # matches — deliberately, to prove tier 1 (phrase) is order-sensitive. That
+    # used to mean zero results overall. Now tier 2 (keyword fallback) catches
+    # it via its one real content word, "beginning" — the same behavior a
+    # natural-language question relies on. This is the one intentional,
+    # documented behavior change in this change: a scrambled phrase now
+    # resolves the same way any other multi-word natural-language query would.
     results = search(corpus, "beginning the In")
 
-    assert results == []
+    assert {r.verse.osis for r in results} == {"Gen.1.1", "John.1.1"}
+
+
+def test_search_exact_phrase_still_wins_over_keyword_fallback_when_present(
+    corpus: FakeCorpus,
+) -> None:
+    # When the exact phrase IS present verbatim, tier 1 alone determines the
+    # result set — tier 2 never runs, so this is unchanged from before.
+    results = search(corpus, "In the beginning")
+
+    assert {r.verse.osis for r in results} == {"Gen.1.1", "John.1.1"}
 
 
 def test_search_supports_turkish_unicode_characters(corpus: FakeCorpus) -> None:
@@ -109,3 +127,51 @@ def test_search_returns_empty_list_for_no_matches(corpus: FakeCorpus) -> None:
 
 def test_search_returns_empty_list_for_blank_query(corpus: FakeCorpus) -> None:
     assert search(corpus, "   ") == []
+
+
+# --- Keyword fallback: natural-language questions that don't appear verbatim ---
+
+
+def test_search_falls_back_to_keywords_for_a_natural_language_question(corpus: FakeCorpus) -> None:
+    # The full question never appears verbatim in any verse, but its one real
+    # content word ("beginning") does — this is exactly the gap the keyword
+    # fallback closes for real user questions.
+    results = search(corpus, "What is the beginning of the Bible")
+
+    assert {r.verse.osis for r in results} == {"Gen.1.1", "John.1.1"}
+
+
+def test_search_keyword_fallback_ignores_pure_stopword_queries(corpus: FakeCorpus) -> None:
+    results = search(corpus, "What is it")
+
+    assert results == []
+
+
+def test_search_keyword_fallback_scores_by_summed_token_occurrences(corpus: FakeCorpus) -> None:
+    # Word order differs from any verse, so tier 1 finds nothing; tier 2 scores
+    # each verse by how many of {"god", "beginning"} it contains, and how often.
+    results = search(corpus, "God beginning")
+
+    assert [r.verse.osis for r in results] == ["Gen.1.1", "John.1.1", "John.3.16"]
+    assert [r.score for r in results] == [2, 2, 1]
+
+
+def test_search_keyword_fallback_supports_partial_word_matching_per_token(
+    corpus: FakeCorpus,
+) -> None:
+    # "begot" and "son" are each matched as substrings, same as tier 1 does for
+    # a single-word query — "begot" partially matches "begotten".
+    results = search(corpus, "the begot son")
+
+    assert [r.verse.osis for r in results] == ["John.3.16"]
+    assert results[0].score == 2
+
+
+def test_search_ignores_punctuation_differences_for_exact_phrase_matching(
+    corpus: FakeCorpus,
+) -> None:
+    # The verse text has a comma ("Word, and") that this query omits; without
+    # punctuation-insensitive normalization this wouldn't match at all.
+    results = search(corpus, "the Word and the Word was with God")
+
+    assert [r.verse.osis for r in results] == ["John.1.1"]

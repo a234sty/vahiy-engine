@@ -74,3 +74,22 @@ def test_search_requires_non_empty_query() -> None:
     response = client.get("/search", params={"query": ""})
 
     assert response.status_code == 422
+
+
+def test_search_falls_back_to_keywords_for_a_natural_language_question() -> None:
+    # This exact sentence appears nowhere in the corpus, but its content words
+    # ("created", "heaven", "earth") do — the keyword fallback surfaces the
+    # relevant verse where a pure exact-phrase search would find nothing.
+    response = client.get("/search", params={"query": "Who created the heaven and the earth?"})
+
+    body = response.json()
+    assert [item["osis"] for item in body["results"]] == ["Gen.1.1", "Gen.1.2"]
+    assert [item["score"] for item in body["results"]] == [3, 1]
+
+
+def test_search_ignores_punctuation_differences_for_exact_phrase_matching() -> None:
+    # The verse has a comma ("Word, and") this query omits.
+    response = client.get("/search", params={"query": "the Word and the Word was with God"})
+
+    osis_refs = {item["osis"] for item in response.json()["results"]}
+    assert osis_refs == {"John.1.1"}
