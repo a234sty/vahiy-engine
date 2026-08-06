@@ -1,0 +1,11 @@
+{
+  "name": "Vahiy Engine",
+  "image": "mcr.microsoft.com/devcontainers/python:3.12",
+  "postCreateCommand": "python -m venv .venv && .venv/bin/pip install -e '.[dev]' && bash scripts/setup_corpus.sh",
+  "forwardPorts": [8000],
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-python.python", "charliermarsh.ruff"]
+    }
+  }
+}
