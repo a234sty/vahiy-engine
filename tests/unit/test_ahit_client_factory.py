@@ -47,6 +47,37 @@ def test_only_kjv_registers_when_ahit_corpus_root_path_does_not_exist(
     assert client.get_verse(parse_osis("Gen.1.1")).translation == "KJV"
 
 
+OSIS_NAMESPACE = "http://www.bibletechnologies.net/2003/OSIS/namespace"
+
+
+def _write_osis_xml_book(directory: Path, book: str, text: str) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    doc = f"""<?xml version="1.0" encoding="UTF-8"?>
+<osis xmlns="{OSIS_NAMESPACE}">
+  <osisText xml:lang="he" osisIDWork="OSHB" osisRefWork="Bible">
+    <div type="book" osisID="{book}">
+      <chapter osisID="{book}.1">
+        <verse osisID="{book}.1.1"><w>{text}</w></verse>
+      </chapter>
+    </div>
+  </osisText>
+</osis>
+"""
+    (directory / f"{book}.xml").write_text(doc, encoding="utf-8")
+
+
+def _write_verse_map(directory: Path) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    doc = """<?xml version="1.0" encoding="UTF-8"?>
+<verseMap xmlns="http://www.APTBibleTools.com/namespace">
+  <book osisID="Gen">
+    <verse wlc="Gen.32.1" kjv="Gen.31.55" type="full"/>
+  </book>
+</verseMap>
+"""
+    (directory / "VerseMap.xml").write_text(doc, encoding="utf-8")
+
+
 def _write_verse_list_book(directory: Path, osis: str, translation: str, text: str) -> None:
     directory.mkdir(parents=True, exist_ok=True)
     (directory / f"{osis}.json").write_text(
@@ -103,3 +134,49 @@ def test_sblgnt_registers_independently_of_ytc(
     assert client.get_verse(parse_osis("John.1.1"), translation="SBLGNT").text == "greek only"
     with pytest.raises(UnknownTranslationError):
         client.get_verse(parse_osis("John.1.1"), translation="YTC")
+
+
+def test_wlc_registers_when_real_path_exists(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    wlc_dir = tmp_path / "bible" / "ot" / "books"
+    _write_osis_xml_book(wlc_dir, "Gen", "בְּרֵאשִׁית")
+    _write_verse_map(wlc_dir)
+    monkeypatch.setattr(settings, "ahit_corpus_root", str(tmp_path))
+
+    client = get_ahit_client()
+
+    wlc = client.get_verse(parse_osis("Gen.1.1"), translation="WLC")
+
+    assert wlc.text == "בְּרֵאשִׁית"
+    # The default translation is unaffected.
+    assert client.get_verse(parse_osis("Gen.1.1")).translation == "KJV"
+
+
+def test_wlc_registration_excludes_verse_map_from_book_discovery(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    wlc_dir = tmp_path / "bible" / "ot" / "books"
+    _write_osis_xml_book(wlc_dir, "Gen", "בְּרֵאשִׁית")
+    _write_verse_map(wlc_dir)
+    monkeypatch.setattr(settings, "ahit_corpus_root", str(tmp_path))
+
+    client = get_ahit_client()
+
+    assert [v.osis for v in client.iter_verses(translation="WLC")] == ["Gen.1.1"]
+
+
+def test_wlc_registers_independently_of_ytc_and_sblgnt(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Only the WLC directory exists — YTC's and SBLGNT's don't.
+    _write_osis_xml_book(tmp_path / "bible" / "ot" / "books", "Gen", "בְּרֵאשִׁית")
+    monkeypatch.setattr(settings, "ahit_corpus_root", str(tmp_path))
+
+    client = get_ahit_client()
+
+    assert client.get_verse(parse_osis("Gen.1.1"), translation="WLC").text == "בְּרֵאשִׁית"
+    with pytest.raises(UnknownTranslationError):
+        client.get_verse(parse_osis("Gen.1.1"), translation="YTC")
+    with pytest.raises(UnknownTranslationError):
+        client.get_verse(parse_osis("Gen.1.1"), translation="SBLGNT")

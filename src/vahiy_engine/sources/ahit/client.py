@@ -9,6 +9,7 @@ from vahiy_engine.config import settings
 from vahiy_engine.sources.client import CorpusClient
 from vahiy_engine.sources.loaders.base import BookLoader
 from vahiy_engine.sources.loaders.json_loader import JsonBookLoader
+from vahiy_engine.sources.loaders.osis_xml_loader import OsisXmlLoader
 from vahiy_engine.sources.loaders.verse_list_json_loader import VerseListJsonLoader
 from vahiy_engine.sources.models import Verse
 from vahiy_engine.sources.osis import OsisReference
@@ -158,6 +159,14 @@ def get_ahit_client() -> AhitCorpusClient:
         if sblgnt_path.is_dir():
             translations["SBLGNT"] = TranslationSource(
                 paths=[sblgnt_path], loader=VerseListJsonLoader()
+            )
+
+        wlc_path = corpus_root / "bible" / "ot" / "books"
+        if wlc_path.is_dir():
+            translations["WLC"] = TranslationSource(
+                paths=[wlc_path],
+                loader=OsisXmlLoader(),
+                exclude=frozenset({"VerseMap"}),
             )
 
     return AhitCorpusClient(translations=translations)
