@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     gemini_api_key: str | None = Field(default=None, validation_alias="GEMINI_API_KEY")
     gemini_model: str = Field(default="gemini-2.5-flash", validation_alias="GEMINI_MODEL")
 
+    # How long a single LLM provider call may run before failing with a clean
+    # LLMProviderError (-> 502) instead of hanging until an external proxy
+    # kills the connection with an opaque 504.
+    llm_request_timeout_seconds: float = 30.0
+
     model_config = SettingsConfigDict(env_file=".env", env_prefix="VAHIY_", extra="ignore")
 
 

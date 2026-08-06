@@ -87,7 +87,7 @@ def test_constructor_reads_api_key_from_config(monkeypatch: pytest.MonkeyPatch) 
     with patch("vahiy_engine.providers.llm.openai_provider.OpenAI") as mock_openai_cls:
         OpenAIProvider()
 
-    mock_openai_cls.assert_called_once_with(api_key="key-from-config")
+    assert mock_openai_cls.call_args.kwargs["api_key"] == "key-from-config"
 
 
 def test_constructor_prefers_explicit_api_key_over_config(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -96,7 +96,42 @@ def test_constructor_prefers_explicit_api_key_over_config(monkeypatch: pytest.Mo
     with patch("vahiy_engine.providers.llm.openai_provider.OpenAI") as mock_openai_cls:
         OpenAIProvider(api_key="explicit-key")
 
-    mock_openai_cls.assert_called_once_with(api_key="explicit-key")
+    assert mock_openai_cls.call_args.kwargs["api_key"] == "explicit-key"
+
+
+def test_constructor_uses_timeout_from_config_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "openai_api_key", "key")
+    monkeypatch.setattr(settings, "llm_request_timeout_seconds", 45.0)
+
+    with patch("vahiy_engine.providers.llm.openai_provider.OpenAI") as mock_openai_cls:
+        OpenAIProvider()
+
+    assert mock_openai_cls.call_args.kwargs["timeout"] == 45.0
+
+
+def test_constructor_prefers_explicit_timeout_over_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "openai_api_key", "key")
+    monkeypatch.setattr(settings, "llm_request_timeout_seconds", 45.0)
+
+    with patch("vahiy_engine.providers.llm.openai_provider.OpenAI") as mock_openai_cls:
+        OpenAIProvider(timeout_seconds=5.0)
+
+    assert mock_openai_cls.call_args.kwargs["timeout"] == 5.0
+
+
+def test_generate_answer_wraps_timeout_error() -> None:
+    # openai.APITimeoutError subclasses APIError, so it's already covered by
+    # the existing except clause — this pins that down explicitly, since a
+    # request timeout is exactly the case a client-side timeout exists to
+    # convert into a clean LLMProviderError instead of an indefinite hang.
+    client = MagicMock()
+    client.chat.completions.create.side_effect = openai.APITimeoutError(
+        request=httpx.Request("POST", "https://api.openai.com/v1/chat/completions")
+    )
+    provider = OpenAIProvider(client=client)
+
+    with pytest.raises(LLMProviderError):
+        provider.generate_answer("system", "question", "context")
 
 
 def test_generate_answer_wraps_connection_error() -> None:

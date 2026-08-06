@@ -2,6 +2,7 @@
 
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 from google.genai import errors as genai_errors
 
@@ -86,7 +87,7 @@ def test_constructor_reads_api_key_from_config(monkeypatch: pytest.MonkeyPatch) 
     with patch("vahiy_engine.providers.llm.gemini_provider.genai.Client") as mock_client_cls:
         GeminiProvider()
 
-    mock_client_cls.assert_called_once_with(api_key="key-from-config")
+    assert mock_client_cls.call_args.kwargs["api_key"] == "key-from-config"
 
 
 def test_constructor_prefers_explicit_api_key_over_config(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -95,7 +96,43 @@ def test_constructor_prefers_explicit_api_key_over_config(monkeypatch: pytest.Mo
     with patch("vahiy_engine.providers.llm.gemini_provider.genai.Client") as mock_client_cls:
         GeminiProvider(api_key="explicit-key")
 
-    mock_client_cls.assert_called_once_with(api_key="explicit-key")
+    assert mock_client_cls.call_args.kwargs["api_key"] == "explicit-key"
+
+
+def test_constructor_uses_timeout_from_config_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "gemini_api_key", "key")
+    monkeypatch.setattr(settings, "llm_request_timeout_seconds", 45.0)
+
+    with patch("vahiy_engine.providers.llm.gemini_provider.genai.Client") as mock_client_cls:
+        GeminiProvider()
+
+    http_options = mock_client_cls.call_args.kwargs["http_options"]
+    assert http_options.timeout == 45000
+
+
+def test_constructor_prefers_explicit_timeout_over_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "gemini_api_key", "key")
+    monkeypatch.setattr(settings, "llm_request_timeout_seconds", 45.0)
+
+    with patch("vahiy_engine.providers.llm.gemini_provider.genai.Client") as mock_client_cls:
+        GeminiProvider(timeout_seconds=5.0)
+
+    http_options = mock_client_cls.call_args.kwargs["http_options"]
+    assert http_options.timeout == 5000
+
+
+def test_generate_answer_wraps_timeout_exception() -> None:
+    # A request timeout isn't wrapped in APIError by the google-genai SDK —
+    # it's re-raised as the underlying httpx exception once retries (none,
+    # here) are exhausted, so it needs its own except clause to become a
+    # clean LLMProviderError instead of propagating raw and hanging the
+    # request until an external proxy kills it with a 504.
+    client = MagicMock()
+    client.models.generate_content.side_effect = httpx.ReadTimeout("timed out")
+    provider = GeminiProvider(client=client)
+
+    with pytest.raises(LLMProviderError):
+        provider.generate_answer("system", "question", "context")
 
 
 def test_generate_answer_wraps_client_error() -> None:
