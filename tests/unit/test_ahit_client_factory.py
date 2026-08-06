@@ -17,8 +17,17 @@ def clear_client_cache():
     get_ahit_client.cache_clear()
 
 
-def test_only_kjv_registers_when_ahit_corpus_root_is_unset(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "ahit_corpus_root", None)
+def test_default_ahit_corpus_root_matches_setup_corpus_scripts_default() -> None:
+    # config.py's default and setup_corpus.sh's default clone target must
+    # stay in sync — that's what makes "run the script, it just works" true
+    # with zero extra configuration.
+    assert settings.ahit_corpus_root == "external/ahit-corpus"
+
+
+def test_only_kjv_registers_when_configured_root_does_not_exist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "ahit_corpus_root", "external/ahit-corpus")
 
     client = get_ahit_client()
 
