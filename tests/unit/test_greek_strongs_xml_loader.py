@@ -153,8 +153,49 @@ def test_parses_multiple_entries_from_one_file(tmp_path: Path) -> None:
     assert set(entries) == {"G1", "G23", "G3056"}
 
 
-def test_raises_value_error_when_entry_is_missing_required_elements(tmp_path: Path) -> None:
-    path = _write_dictionary(tmp_path, '<entry strongs="99999"></entry>')
+def test_raises_value_error_when_entry_has_a_headword_but_no_definition_source(
+    tmp_path: Path,
+) -> None:
+    path = _write_dictionary(
+        tmp_path, '<entry strongs="99999"><greek unicode="x" translit="x"/></entry>'
+    )
 
     with pytest.raises(ValueError, match="99999"):
         GreekStrongsXmlLoader().load(path)
+
+
+def test_not_used_entries_are_skipped_without_error(tmp_path: Path) -> None:
+    # Real ahit-corpus data shape: a handful of Strong's numbers were
+    # reserved but never assigned a word. The entry's whole content is the
+    # plain text "Not Used" — no <greek>, <strongs_def>, or <kjv_def> at
+    # all.
+    not_used = '<entry strongs="02717">\n <strongs>2717</strongs>  Not Used\n</entry>'
+    path = _write_dictionary(tmp_path, G3056, not_used)
+
+    entries = GreekStrongsXmlLoader().load(path)
+
+    assert set(entries) == {"G3056"}
+
+
+def test_falls_back_to_kjv_def_when_strongs_def_is_absent(tmp_path: Path) -> None:
+    # Real ahit-corpus data: G302 (ἄν) has a real headword but no
+    # <strongs_def> at all — only a <strongs_derivation> and <kjv_def>.
+    g302 = (
+        '<entry strongs="00302">\n'
+        ' <strongs>302</strongs>   <greek BETA="A)/N" unicode="ἄν" translit="án"/>   '
+        '<pronunciation strongs="an"/>\n\n'
+        " <strongs_derivation>a primary particle, denoting a supposition, wish, possibility or\n"
+        " uncertainty</strongs_derivation>"
+        "<kjv_def>:--(what-, where-, wither-, who-)soever.</kjv_def> Usually\n"
+        " unexpressed except by the subjunctive or potential mood. Also\n"
+        ' contracted for <strongsref language="GREEK" strongs="1437"/>.\n'
+        '<see language="GREEK" strongs="1437"/>\n'
+        "</entry>"
+    )
+    path = _write_dictionary(tmp_path, g302)
+
+    entry = GreekStrongsXmlLoader().load(path)["G302"]
+
+    assert entry.lemma == "ἄν"
+    assert entry.definition == ":--(what-, where-, wither-, who-)soever."
+    assert entry.kjv_translation == ":--(what-, where-, wither-, who-)soever."

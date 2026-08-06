@@ -17,7 +17,10 @@ possible children:
 - <strongs_derivation> and <strongs_def> hold etymology and definition
   prose respectively, and may contain nested <greek>, <latin>, or
   <strongsref> elements inline. Only <strongs_def> is kept, as the
-  entry's `definition`.
+  entry's `definition` — except for a small number of entries (verified:
+  19 in ahit-corpus's copy) that have a real headword but no <strongs_def>
+  at all, only a <kjv_def>; for those, <kjv_def>'s text is used as the
+  definition too, since it's the only prose available.
 - <kjv_def> holds the KJV-translation gloss, kept as `kjv_translation`.
 - <see language="..." strongs=".../> and <strongsref language="..."
   strongs="..."/> are empty elements marking a cross-reference to another
@@ -27,6 +30,14 @@ possible children:
   source text built around them (e.g. "akin to the base of );") is kept
   exactly as written, since fixing it would mean editing the source, not
   transcribing it.
+
+A small number of Strong's numbers (verified: 101 in ahit-corpus's copy)
+were reserved but never assigned to a word — Strong's own edition marks
+these with the entry's whole content being the plain text "Not Used" and
+no <greek> headword, <strongs_def>, or <kjv_def> at all. These aren't
+real dictionary entries, so they're skipped entirely rather than
+producing a LexiconEntry with fabricated content for a word that was
+never assigned one.
 
 <strongs_def> and <kjv_def> prose is extracted with ElementTree's
 `itertext()` (every descendant text and tail node, in document order),
@@ -58,15 +69,20 @@ class GreekStrongsXmlLoader(LexiconLoader):
             strongs_number = f"G{int(raw_number)}"
 
             greek = entry_element.find("greek")
+            if greek is None:
+                # A reserved-but-unassigned "Not Used" number — not a real entry.
+                continue
+
             strongs_def = entry_element.find("strongs_def")
-            if greek is None or strongs_def is None:
+            kjv_def = entry_element.find("kjv_def")
+            definition_source = strongs_def if strongs_def is not None else kjv_def
+            if definition_source is None:
                 raise ValueError(
-                    f"Entry strongs='{raw_number}' in {lexicon_path} is missing its "
-                    "required <greek> headword or <strongs_def>"
+                    f"Entry strongs='{raw_number}' in {lexicon_path} has a <greek> headword "
+                    "but neither a <strongs_def> nor a <kjv_def> to use as its definition"
                 )
 
             pronunciation = entry_element.find("pronunciation")
-            kjv_def = entry_element.find("kjv_def")
 
             entries[strongs_number] = LexiconEntry(
                 strongs_number=strongs_number,
@@ -74,7 +90,7 @@ class GreekStrongsXmlLoader(LexiconLoader):
                 lemma=greek.get("unicode", ""),
                 transliteration=greek.get("translit"),
                 pronunciation=(pronunciation.get("strongs") if pronunciation is not None else None),
-                definition=_collapse_whitespace(_text_of(strongs_def)),
+                definition=_collapse_whitespace(_text_of(definition_source)),
                 kjv_translation=(
                     _collapse_whitespace(_text_of(kjv_def)) if kjv_def is not None else None
                 ),

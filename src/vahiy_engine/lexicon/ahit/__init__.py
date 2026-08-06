@@ -1,0 +1,1 @@
+"""Ahit Corpus lexicon client."""
