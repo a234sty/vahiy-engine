@@ -15,6 +15,7 @@ class OpenAIProvider(LLMProvider):
         api_key: str | None = None,
         model: str | None = None,
         client: OpenAI | None = None,
+        timeout_seconds: float | None = None,
     ) -> None:
         self._model = model or settings.openai_model
 
@@ -26,7 +27,10 @@ class OpenAIProvider(LLMProvider):
         if not resolved_key:
             raise LLMProviderError("OPENAI_API_KEY is not set")
 
-        self._client = OpenAI(api_key=resolved_key)
+        resolved_timeout = (
+            timeout_seconds if timeout_seconds is not None else settings.llm_request_timeout_seconds
+        )
+        self._client = OpenAI(api_key=resolved_key, timeout=resolved_timeout)
 
     def generate_answer(self, system_prompt: str, question: str, context: str) -> str:
         try:

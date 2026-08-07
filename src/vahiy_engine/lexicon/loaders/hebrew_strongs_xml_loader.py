@@ -9,22 +9,24 @@ text: <div type="entry"> instead of <verse>).
 
 Each entry is a `<div type="entry">` whose relevant direct children are:
 
-- <w ID="H1" lemma="..." xlit="..." .../> is the entry's own headword,
-  always the first <w> child of the entry div. `ID` is the entry's Strong's
-  number, already in the spec's own citation form ("H1") with no
-  reformatting needed. `lemma` is the vocalized Hebrew word; `xlit` is its
-  transliteration. (A `<foreign>` sibling, when present, nests further
-  <w> elements for cross-referenced Greek equivalents — not the entry's
-  own headword, and not read here.)
+- <w ID="H1" lemma="..." xlit="..." POS="..." .../> is the entry's own
+  headword, always the first <w> child of the entry div. `ID` is the
+  entry's Strong's number, already in the spec's own citation form ("H1")
+  with no reformatting needed. `lemma` is the vocalized Hebrew word;
+  `xlit` is its academic transliteration. Despite its name, `POS` is not
+  a part-of-speech tag (that's the separate `morph` attribute) — it's a
+  plain-ASCII phonetic pronunciation guide (e.g. "el-o-heem'" for H430),
+  verified present on all 8674 entries in ahit-corpus's copy; kept as
+  `pronunciation`, the same role Greek's <pronunciation> element plays.
+  (A `<foreign>` sibling, when present, nests further <w> elements for
+  cross-referenced Greek equivalents — not the entry's own headword, and
+  not read here.)
 - <list><item>1) ...</item>...</list> holds the numbered dictionary senses;
   joined with "; " to form `definition`.
 - <note type="translation"> holds the KJV-rendering gloss, kept as
   `kjv_translation`. (Sibling <note type="exegesis"> and <note
   type="explanation"> notes carry etymology/gloss information not modeled
   by LexiconEntry today, and are not read here.)
-
-There is no separate pronunciation guide in this format (unlike Greek's
-<pronunciation>), so `pronunciation` is always None for Hebrew entries.
 
 <item> and <note type="translation"> text is extracted with
 ElementTree's `itertext()` and whitespace-collapsed, the same as
@@ -78,7 +80,7 @@ class HebrewStrongsXmlLoader(LexiconLoader):
                 language=self.language,
                 lemma=headword.get("lemma", ""),
                 transliteration=headword.get("xlit"),
-                pronunciation=None,
+                pronunciation=headword.get("POS"),
                 definition=_join_items(list_element),
                 kjv_translation=(
                     _collapse_whitespace(_text_of(translation_note))

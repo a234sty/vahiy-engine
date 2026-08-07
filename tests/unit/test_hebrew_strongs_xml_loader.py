@@ -61,6 +61,28 @@ the same Hebrew form from <w lemma="הָיָה" POS="haw-yaw" src="1961" xlit="h
       </div>"""
 
 
+# Real ahit-corpus data: H430 (אֱלֹהִים / "Elohim") — its POS attribute
+# ("el-o-heem'") is a phonetic pronunciation guide, not a part-of-speech
+# tag (morph="n-m" already carries that).
+H430 = """<div type="entry" n="430">
+        <w gloss="93c" lemma="אֱלֹהִים" morph="n-m" POS="el-o-heem'" xlit="ʼĕlôhîym" ID="H430" \
+xml:lang="heb">אלהים</w>
+        <foreign xml:lang="grc">
+          <w gloss="G:2304" />
+          <w gloss="G:2316" />
+        </foreign>
+        <list>
+          <item>1) (plural)</item>
+          <item>2e) God</item>
+        </list>
+        <note type="exegesis">plural of <w lemma="אֱלוֹהַּ" POS="el-o'-ah" src="433" \
+xlit="ʼĕlôwahh"/>;</note>
+        <note type="explanation"><hi>gods</hi> in the ordinary sense</note>
+        <note type="translation">angels, [idiom] exceeding, God (gods) (-dess, -ly), [idiom] \
+(very) great, judges, [idiom] mighty.</note>
+      </div>"""
+
+
 def _write_dictionary(directory: Path, *entries: str) -> Path:
     doc = (
         f'<osis xmlns="{OSIS_NAMESPACE}"><osisText>'
@@ -86,7 +108,7 @@ def test_parses_h1_with_its_numbered_senses_and_kjv_gloss(tmp_path: Path) -> Non
     assert ab.language == "hebrew"
     assert ab.lemma == "אָב"
     assert ab.transliteration == "ʼâb"
-    assert ab.pronunciation is None
+    assert ab.pronunciation == "awb"
     assert ab.definition == (
         "1) father of an individual; 2) of God as father of his people; "
         "3) head or founder of a household, group, family, or clan; 4) ancestor; "
@@ -122,6 +144,16 @@ def test_nested_w_cross_reference_inside_translation_note_contributes_no_text(
         "I will be (Hosea 13:10,14) (which is often the rendering of the same "
         "Hebrew form from )."
     )
+
+
+def test_pos_attribute_is_read_as_pronunciation_not_discarded(tmp_path: Path) -> None:
+    path = _write_dictionary(tmp_path, H430)
+
+    entry = HebrewStrongsXmlLoader().load(path)["H430"]
+
+    assert entry.pronunciation == "el-o-heem'"
+    assert entry.lemma == "אֱלֹהִים"
+    assert entry.transliteration == "ʼĕlôhîym"
 
 
 def test_parses_multiple_entries_from_one_file(tmp_path: Path) -> None:

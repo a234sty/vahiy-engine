@@ -117,3 +117,60 @@ def test_first_registered_entry_wins_on_a_duplicate_form() -> None:
 
     assert match is not None
     assert match.strongs_number == "G1"
+
+
+# --- Modifier-letter stripping (Hebrew aleph/ayin markers) ---
+
+
+def test_plain_ascii_query_matches_a_transliteration_with_a_leading_modifier_letter() -> None:
+    # AB's transliteration is "ʼâb" — the leading "ʼ" is a spacing modifier
+    # letter (aleph marker), not a combining diacritic, so it needs its own
+    # stripping rule; a plain "ab" (no marker, no accent) must still match.
+    client = FakeLexiconClient([AB])
+
+    match = find_lexicon_term(client, "What does ab mean?")
+
+    assert match is not None
+    assert match.strongs_number == "H1"
+
+
+# --- COMMON_ALIASES: established English loanword spellings ---
+
+
+def test_elohim_alias_resolves_to_h430() -> None:
+    # "Elohim" is the established English spelling; the entry's own
+    # transliteration ("ʼĕlôhîym") differs by more than diacritics/markers
+    # (it spells the Hebrew mater lectionis yod as a literal "y"), so this
+    # can only resolve via the curated alias, not the transliteration index.
+    elohim = LexiconEntry(
+        strongs_number="H430",
+        language="hebrew",
+        lemma="אֱלֹהִים",
+        transliteration="ʼĕlôhîym",
+        pronunciation="el-o-heem'",
+        definition="gods, God",
+    )
+    client = FakeLexiconClient([elohim])
+
+    match = find_lexicon_term(client, "What does Elohim mean?")
+
+    assert match is not None
+    assert match.strongs_number == "H430"
+
+
+def test_elohim_alias_is_case_insensitive() -> None:
+    elohim = LexiconEntry(
+        strongs_number="H430", language="hebrew", lemma="אֱלֹהִים", definition="gods, God"
+    )
+    client = FakeLexiconClient([elohim])
+
+    assert find_lexicon_term(client, "ELOHIM") is not None
+    assert find_lexicon_term(client, "elohim") is not None
+
+
+def test_alias_falls_through_when_its_number_is_not_registered_on_the_client() -> None:
+    # The Hebrew lexicon isn't loaded on this client at all — H430 doesn't
+    # exist here, so the alias must fail gracefully (None), not raise.
+    client = FakeLexiconClient([LOGOS])
+
+    assert find_lexicon_term(client, "What does Elohim mean?") is None
