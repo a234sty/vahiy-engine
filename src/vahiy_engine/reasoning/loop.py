@@ -20,6 +20,7 @@ from vahiy_engine.reasoning.trace import (
     RejectedEvidenceItem,
 )
 from vahiy_engine.search.index import STOPWORDS, normalize, tokenize
+from vahiy_engine.search.reference_parser import find_references
 from vahiy_engine.sources.ahit.client import VerseNotFoundError
 from vahiy_engine.sources.client import CorpusClient
 from vahiy_engine.sources.osis import InvalidOsisReferenceError, parse_osis
@@ -104,6 +105,16 @@ def run_reasoning_loop(
 
 
 def _detect_intent(graph: KnowledgeGraph, question: str) -> tuple[Node, str] | None:
+    # A citation embedded directly in the question ("How does Exodus 3:14
+    # explain...") is a more precise signal than any single keyword, and is
+    # tried first: a question can cite a verse without ever naming the
+    # concept it's evidence for, which find_by_label alone can't catch.
+    for book, chapter, verse in find_references(question):
+        citation = f"{book}.{chapter}.{verse}"
+        matches = graph.find_by_citation(citation)
+        if matches:
+            return matches[0], citation
+
     for token in tokenize(normalize(question)):
         if token in STOPWORDS:
             continue

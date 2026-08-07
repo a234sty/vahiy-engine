@@ -5,6 +5,7 @@ import pytest
 from vahiy_engine.search.reference_parser import (
     BOOK_ALIASES,
     ReferenceParseError,
+    find_references,
     parse_reference,
 )
 
@@ -72,13 +73,44 @@ def test_parse_reference_rejects_malformed_input(query: str) -> None:
 
 def test_parse_reference_rejects_unknown_book() -> None:
     with pytest.raises(ReferenceParseError):
-        parse_reference("Exodus 1:1")
+        parse_reference("Leviticus 1:1")
 
 
 def test_book_aliases_map_to_canonical_osis_codes() -> None:
     assert BOOK_ALIASES["genesis"] == "Gen"
     assert BOOK_ALIASES["gen"] == "Gen"
     assert BOOK_ALIASES["tekvin"] == "Gen"
+    assert BOOK_ALIASES["exodus"] == "Exod"
+    assert BOOK_ALIASES["exod"] == "Exod"
     assert BOOK_ALIASES["john"] == "John"
     assert BOOK_ALIASES["yuhanna"] == "John"
     assert BOOK_ALIASES["yuh"] == "John"
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("How does Exodus 3:14 explain the meaning of God's name?", [("Exod", 3, 14)]),
+        ("What is Genesis 2:3 about?", [("Gen", 2, 3)]),
+        ("No reference in this sentence at all.", []),
+        (
+            "Compare Genesis 1:1 with Gen 2:3 in the same question.",
+            [("Gen", 1, 1), ("Gen", 2, 3)],
+        ),
+        ("GENESIS 1:1 in all caps", [("Gen", 1, 1)]),
+    ],
+)
+def test_find_references_locates_embedded_references(
+    text: str, expected: list[tuple[str, int, int]]
+) -> None:
+    assert find_references(text) == expected
+
+
+def test_find_references_ignores_a_similar_but_unknown_book_name() -> None:
+    assert find_references("What does Leviticus 1:1 say?") == []
+
+
+def test_find_references_does_not_match_a_bare_word_before_a_number_pair() -> None:
+    # "chapter 3:14" should not spuriously resolve -- only a real book alias
+    # from BOOK_ALIASES may anchor a match, never an arbitrary preceding word.
+    assert find_references("See chapter 3:14 of the outline.") == []

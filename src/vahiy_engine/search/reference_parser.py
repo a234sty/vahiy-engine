@@ -6,6 +6,8 @@ BOOK_ALIASES: dict[str, str] = {
     "genesis": "Gen",
     "gen": "Gen",
     "tekvin": "Gen",
+    "exodus": "Exod",
+    "exod": "Exod",
     "john": "John",
     "yuhanna": "John",
     "yuh": "John",
@@ -13,6 +15,18 @@ BOOK_ALIASES: dict[str, str] = {
 """Maps a lowercased book name/abbreviation (English or Turkish) to its canonical OSIS book code."""
 
 _REFERENCE_PATTERN = re.compile(r"^\s*(?P<book>.+?)\s+(?P<chapter>\d+)\s*:\s*(?P<verse>\d+)\s*$")
+
+# Built from BOOK_ALIASES (longest alias first, so alternation prefers the
+# fuller name at a given start position) rather than a generic `.+?` book
+# group: find_references() scans free text, where an unbounded `.+?` would
+# have no reliable stopping point. Word boundaries keep "Exod" from matching
+# inside an unrelated longer word.
+_EMBEDDED_REFERENCE_PATTERN = re.compile(
+    r"\b(?P<book>"
+    + "|".join(sorted((re.escape(alias) for alias in BOOK_ALIASES), key=len, reverse=True))
+    + r")\b\.?\s+(?P<chapter>\d+)\s*:\s*(?P<verse>\d+)",
+    re.IGNORECASE,
+)
 
 
 class ReferenceParseError(ValueError):
@@ -50,3 +64,26 @@ def parse_reference(query: str) -> tuple[str, int, int]:
     verse = int(match.group("verse"))
 
     return book, chapter, verse
+
+
+def find_references(text: str) -> list[tuple[str, int, int]]:
+    """Find every Bible reference embedded anywhere in free text.
+
+    Unlike `parse_reference`, `text` doesn't have to be *only* a reference --
+    "How does Exodus 3:14 explain the meaning of God's name?" finds one
+    reference and ignores the surrounding sentence. Matching is scoped to
+    the known book names/abbreviations in BOOK_ALIASES (not a generic "any
+    word(s) before a chapter:verse" pattern), so this only fires on an
+    actual recognized book name, never an arbitrary word that happens to
+    precede a number pair.
+
+    Returns references in the order they appear, as (book, chapter, verse)
+    tuples with the canonical OSIS book code -- empty if none are found.
+    """
+    references = []
+    for match in _EMBEDDED_REFERENCE_PATTERN.finditer(text):
+        book = BOOK_ALIASES[match.group("book").lower()]
+        chapter = int(match.group("chapter"))
+        verse = int(match.group("verse"))
+        references.append((book, chapter, verse))
+    return references

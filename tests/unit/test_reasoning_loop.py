@@ -124,6 +124,73 @@ def test_detects_intent_and_matches_the_yhwh_node(yhwh_graph: KnowledgeGraph) ->
     assert result.trace.detected_intent.matched_label == "yhwh"
 
 
+def test_detects_intent_from_an_embedded_citation_without_the_concept_name(
+    yhwh_graph: KnowledgeGraph,
+) -> None:
+    # Real gap found via the 500-question benchmark: "How does Exodus 3:14
+    # explain the meaning of God's name?" never says "YHWH", but Exod.3.14
+    # is exactly the citation on the yhwh node's "explains" edge.
+    corpus = FakeCorpus({("Exod.3.14", "WLC"): "I AM THAT I AM"})
+    lexicon = FakeLexiconClient({"H3068": make_h3068()})
+
+    result = run_reasoning_loop(
+        yhwh_graph,
+        corpus,
+        FakeQuranClient({}),
+        lexicon,
+        "How does Exodus 3:14 explain the meaning of God's name?",
+    )
+
+    assert result is not None
+    assert result.trace.detected_intent.node_id == "yhwh"
+    assert result.trace.detected_intent.matched_label == "Exod.3.14"
+
+
+def test_embedded_citation_match_takes_priority_over_a_label_match_elsewhere() -> None:
+    # sabbath and yhwh are both real nodes; the question names "Sabbath" but
+    # cites Exod.3.14 (a yhwh citation). Citation-based detection is tried
+    # first, so the more precise signal wins.
+    graph = KnowledgeGraph()
+    graph.add_node(Node(id="yhwh", type="concept", labels={"en": "YHWH"}))
+    graph.add_node(Node(id="sabbath", type="concept", labels={"en": "Sabbath"}))
+    graph.add_edge(
+        Edge(source_id="yhwh", type="explains", citation="Exod.3.14", citation_type="osis")
+    )
+    corpus = FakeCorpus({("Exod.3.14", "WLC"): "text"})
+
+    result = run_reasoning_loop(
+        graph,
+        corpus,
+        FakeQuranClient({}),
+        FakeLexiconClient({}),
+        "Exodus 3:14 has nothing to do with the Sabbath.",
+    )
+
+    assert result is not None
+    assert result.trace.detected_intent.node_id == "yhwh"
+
+
+def test_embedded_citation_not_on_the_graph_falls_back_to_label_matching() -> None:
+    graph = KnowledgeGraph()
+    graph.add_node(Node(id="sabbath", type="concept", labels={"en": "Sabbath"}))
+    graph.add_edge(
+        Edge(source_id="sabbath", type="explains", citation="Gen.2.3", citation_type="osis")
+    )
+    corpus = FakeCorpus({("Gen.2.3", "WLC"): "text"})
+
+    result = run_reasoning_loop(
+        graph,
+        corpus,
+        FakeQuranClient({}),
+        FakeLexiconClient({}),
+        "Genesis 1:1 has nothing to do with the Sabbath.",
+    )
+
+    assert result is not None
+    assert result.trace.detected_intent.node_id == "sabbath"
+    assert result.trace.detected_intent.matched_label == "sabbath"
+
+
 def test_osis_evidence_resolves_via_wlc(yhwh_graph: KnowledgeGraph) -> None:
     corpus = FakeCorpus({("Exod.3.14", "WLC"): "wlc text"})
     lexicon = FakeLexiconClient({"H3068": make_h3068()})

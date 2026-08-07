@@ -45,6 +45,24 @@ class KnowledgeGraph:
     def nodes_by_type(self, type: str) -> list[Node]:
         return [node for node in self._nodes.values() if node.type == type]
 
+    def find_by_citation(self, citation: str) -> list[Node]:
+        """Find every node with an edge citing exactly `citation`.
+
+        This is how a reference embedded directly in a question (e.g. "How
+        does Exodus 3:14 explain...") maps to a graph node even when the
+        question never names the concept itself -- complementary to
+        find_by_label(), which only matches on the concept's own name.
+
+        A node is returned once even if multiple of its edges cite the same
+        reference (yhwh's real seed data does this: "explains" and
+        "derives_from" both cite Exod.3.14 for different claims).
+        """
+        seen: dict[str, Node] = {}
+        for edge in self._edges:
+            if edge.citation == citation and edge.source_id not in seen:
+                seen[edge.source_id] = self.get_node(edge.source_id)
+        return list(seen.values())
+
     def find_by_label(self, label: str) -> list[Node]:
         """Find every node with a label matching `label` in any language, case-insensitively.
 

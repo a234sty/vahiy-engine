@@ -26,7 +26,13 @@ def build_seed_graph() -> KnowledgeGraph:
 
     # --- Supporting word nodes ---
 
-    graph.add_node(Node(id="hayah", type="word", labels={"en": "to be, become", "he": "הָיָה"}))
+    graph.add_node(
+        Node(
+            id="hayah",
+            type="word",
+            labels={"en": "to be, become", "he": "הָיָה", "en_translit": "hayah"},
+        )
+    )
     graph.add_edge(
         Edge(
             source_id="hayah",
@@ -36,7 +42,13 @@ def build_seed_graph() -> KnowledgeGraph:
         )
     )
 
-    graph.add_node(Node(id="kyrios", type="word", labels={"en": "Lord", "grc": "κύριος"}))
+    graph.add_node(
+        Node(
+            id="kyrios",
+            type="word",
+            labels={"en": "Lord", "grc": "κύριος", "en_translit": "kyrios"},
+        )
+    )
     graph.add_edge(
         Edge(
             source_id="kyrios",
@@ -161,6 +173,15 @@ def build_seed_graph() -> KnowledgeGraph:
                 "he": "אַבְרָהָם",
                 "ar": "إبراهيم",
                 "tr": "İbrahim",
+                # Retrieval aliases, not identity claims: "Isaac" is a different
+                # person, but the only Isaac narrative this node cites is the
+                # binding (Gen.22.2, already a verified edge below) -- this
+                # alias makes that already-real citation reachable by its
+                # common name, it does not assert Isaac and Abraham are the
+                # same entity. "Abrahamic" is the ordinary adjectival form of
+                # the same name.
+                "en_alias_isaac": "Isaac",
+                "en_adjective": "Abrahamic",
             },
         )
     )
