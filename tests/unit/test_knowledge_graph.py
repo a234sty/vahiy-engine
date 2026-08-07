@@ -148,3 +148,16 @@ def test_find_by_label_returns_empty_list_for_no_match() -> None:
     graph.add_node(make_node("sabbath", en="Sabbath"))
 
     assert graph.find_by_label("logos") == []
+
+
+def test_find_by_label_matches_turkish_dotted_capital_i() -> None:
+    # Real bug, found via live testing: Python's plain str.casefold() turns
+    # "İ" into "i̇" (i + a combining dot above, two characters), not plain
+    # ASCII "i" — so a query already folded by normalize() (which does the
+    # Turkish-specific fold to plain "i") silently failed to match a label
+    # compared with bare .casefold() instead. "İbrahim kimdir?" resolved to
+    # no match at all until both sides went through the same normalize().
+    graph = KnowledgeGraph()
+    graph.add_node(make_node("abraham", type="person", en="Abraham", tr="İbrahim"))
+
+    assert [n.id for n in graph.find_by_label("ibrahim")] == ["abraham"]

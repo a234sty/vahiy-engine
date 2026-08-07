@@ -6,6 +6,7 @@ v0.1 prototype's node count. Revisit only if scale actually demands it.
 """
 
 from vahiy_engine.knowledge_graph.models import Edge, Node
+from vahiy_engine.search.index import normalize
 
 
 class NodeNotFoundError(LookupError):
@@ -48,12 +49,18 @@ class KnowledgeGraph:
         """Find every node with a label matching `label` in any language, case-insensitively.
 
         This is how a user's question token (e.g. "YHWH", "Şabat", "İbrahim")
-        gets mapped to a graph node — the entry point RSN-1's intent
-        detection will use once it exists.
+        gets mapped to a graph node. Uses the same `normalize()` search
+        already uses for verse text, not bare `.casefold()` — Python's plain
+        casefold turns "İ" into "i̇" (i + a combining dot, two characters),
+        not plain ASCII "i", so a query already folded by `normalize()`
+        (which does apply the Turkish-specific fold) would silently fail to
+        match a label compared with bare `.casefold()` instead. Confirmed
+        against real data: "İbrahim kimdir?" didn't match the Abraham node
+        until both sides went through the same normalization.
         """
-        normalized = label.strip().casefold()
+        normalized = normalize(label)
         return [
             node
             for node in self._nodes.values()
-            if any(value.casefold() == normalized for value in node.labels.values())
+            if any(normalize(value) == normalized for value in node.labels.values())
         ]

@@ -162,6 +162,36 @@ def test_strongs_evidence_resolves_to_lemma_and_definition(yhwh_graph: Knowledge
     assert "existing One" in strongs_evidence[0].text
 
 
+def test_same_citation_on_two_edges_is_not_counted_twice() -> None:
+    # Real bug, found via live testing: YHWH's "explains" edge and its
+    # "derives_from" edge both cite Exod.3.14 (they support two different
+    # claims about the same verse). Resolving each edge independently
+    # counted the same underlying source twice, inflating resolved_count
+    # and skewing confidence toward stronger corroboration than actually
+    # exists.
+    graph = KnowledgeGraph()
+    graph.add_node(Node(id="yhwh", type="concept", labels={"en": "YHWH"}))
+    graph.add_node(Node(id="hayah", type="word", labels={"en": "to be"}))
+    graph.add_edge(
+        Edge(source_id="yhwh", type="explains", citation="Exod.3.14", citation_type="osis")
+    )
+    graph.add_edge(
+        Edge(
+            source_id="yhwh",
+            type="derives_from",
+            target_id="hayah",
+            citation="Exod.3.14",
+            citation_type="osis",
+        )
+    )
+    corpus = FakeCorpus({("Exod.3.14", "WLC"): "text"})
+
+    result = run_reasoning_loop(graph, corpus, FakeQuranClient({}), FakeLexiconClient({}), "YHWH")
+
+    assert len(result.trace.evidence_retrieved) == 1
+    assert result.trace.confidence.resolved_count == 1
+
+
 def test_unresolvable_citation_is_tracked_as_rejected_not_dropped(
     yhwh_graph: KnowledgeGraph,
 ) -> None:

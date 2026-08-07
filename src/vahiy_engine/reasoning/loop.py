@@ -61,14 +61,20 @@ def run_reasoning_loop(
         return None
     node, matched_label = match
 
-    resolved: list[EvidenceItem] = []
+    resolved_by_citation: dict[str, EvidenceItem] = {}
     rejected: list[RejectedEvidenceItem] = []
     for edge in graph.edges_from(node.id):
         if edge.citation is None:
             continue
+        if edge.citation in resolved_by_citation:
+            # Two edges (e.g. "explains" and "derives_from") citing the same
+            # verse support two different claims, but it's still one source
+            # -- counting it twice would inflate resolved_count and skew
+            # confidence toward a stronger corroboration than actually exists.
+            continue
         item = _resolve_citation(edge, corpus, quran, lexicon)
         if item is not None:
-            resolved.append(item)
+            resolved_by_citation[edge.citation] = item
         else:
             rejected.append(
                 RejectedEvidenceItem(
@@ -77,6 +83,7 @@ def run_reasoning_loop(
                     reason_code="unresolvable_in_current_corpus",
                 )
             )
+    resolved = list(resolved_by_citation.values())
 
     confidence = calculate_confidence(resolved, rejected)
 
