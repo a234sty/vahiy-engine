@@ -66,6 +66,29 @@ class FakeProvider(LLMProvider):
         return self.answer
 
 
+# --- DEFAULT_SYSTEM_PROMPT: loaded from providers/llm/prompts/chat_system_prompt.txt ---
+
+
+def test_default_system_prompt_is_loaded_from_the_prompt_file_not_empty() -> None:
+    assert len(DEFAULT_SYSTEM_PROMPT) > 500
+
+
+def test_default_system_prompt_forbids_favoring_any_tradition() -> None:
+    assert "never favor any religion" in DEFAULT_SYSTEM_PROMPT.lower()
+
+
+def test_default_system_prompt_requires_grounding_in_provided_context() -> None:
+    lowered = DEFAULT_SYSTEM_PROMPT.lower()
+    assert "context" in lowered
+    assert "never invent a verse" in lowered
+
+
+def test_default_system_prompt_requires_bilingual_turkish_english_output() -> None:
+    lowered = DEFAULT_SYSTEM_PROMPT.lower()
+    assert "turkish" in lowered
+    assert "english" in lowered
+
+
 # --- Orchestration wiring: mock retrieve/build_context/provider directly ---
 
 

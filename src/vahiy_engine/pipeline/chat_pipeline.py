@@ -1,5 +1,6 @@
 """Orchestrates the chat pipeline."""
 
+import importlib.resources
 from dataclasses import dataclass, field
 
 from vahiy_engine.lexicon.client import LexiconClient
@@ -16,12 +17,13 @@ from vahiy_engine.sources.osis import OsisReference
 
 DEFAULT_LIMIT = 5
 
-DEFAULT_SYSTEM_PROMPT = (
-    "You are Vahiy Engine, a neutral, source-first assistant. Answer only using "
-    "the provided context. If the context does not contain the answer, say so "
-    "instead of guessing. Never favor any religion, denomination, sect, "
-    "ideology, or theological position."
-)
+
+def _load_default_system_prompt() -> str:
+    prompt_dir = importlib.resources.files("vahiy_engine.providers.llm") / "prompts"
+    return (prompt_dir / "chat_system_prompt.txt").read_text(encoding="utf-8").strip()
+
+
+DEFAULT_SYSTEM_PROMPT = _load_default_system_prompt()
 
 
 @dataclass(frozen=True)
