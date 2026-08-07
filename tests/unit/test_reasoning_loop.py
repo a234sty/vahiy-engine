@@ -191,6 +191,101 @@ def test_embedded_citation_not_on_the_graph_falls_back_to_label_matching() -> No
     assert result.trace.detected_intent.matched_label == "sabbath"
 
 
+def test_detects_intent_from_a_chapter_only_reference_without_a_verse() -> None:
+    # Real gap found via the 500-question benchmark: "Genesis 17" cites a
+    # whole chapter, not a specific verse, so find_references() alone
+    # (which requires "Book Ch:V") can't match it -- but the abraham node
+    # has an edge citing Gen.17.5, a verse within that chapter.
+    graph = KnowledgeGraph()
+    graph.add_node(Node(id="abraham", type="person", labels={"en": "Abraham"}))
+    graph.add_edge(
+        Edge(
+            source_id="abraham", type="cross_references", citation="Gen.17.5", citation_type="osis"
+        )
+    )
+    corpus = FakeCorpus({("Gen.17.5", "WLC"): "renaming text"})
+
+    result = run_reasoning_loop(
+        graph,
+        corpus,
+        FakeQuranClient({}),
+        FakeLexiconClient({}),
+        "How do circumcision requirements compare between Genesis 17 and Islamic practice?",
+    )
+
+    assert result is not None
+    assert result.trace.detected_intent.node_id == "abraham"
+
+
+def test_exact_verse_citation_takes_priority_over_a_chapter_only_match() -> None:
+    graph = KnowledgeGraph()
+    graph.add_node(Node(id="yhwh", type="concept", labels={"en": "YHWH"}))
+    graph.add_node(Node(id="abraham", type="person", labels={"en": "Abraham"}))
+    graph.add_edge(
+        Edge(source_id="yhwh", type="explains", citation="Exod.3.14", citation_type="osis")
+    )
+    graph.add_edge(
+        Edge(
+            source_id="abraham", type="cross_references", citation="Exod.3.1", citation_type="osis"
+        )
+    )
+    corpus = FakeCorpus({("Exod.3.14", "WLC"): "text"})
+
+    result = run_reasoning_loop(
+        graph, corpus, FakeQuranClient({}), FakeLexiconClient({}), "What happens in Exodus 3:14?"
+    )
+
+    assert result is not None
+    assert result.trace.detected_intent.node_id == "yhwh"
+
+
+def test_a_token_immediately_after_negation_is_not_matched() -> None:
+    # Real gap found via the 500-question benchmark: "Not YHWH, not Sabbath,
+    # not Abraham -- tell me about something else" matched yhwh anyway,
+    # since the loop only ever checked whether a token appeared, never
+    # whether it was being negated.
+    graph = KnowledgeGraph()
+    graph.add_node(Node(id="yhwh", type="concept", labels={"en": "YHWH"}))
+    graph.add_node(Node(id="sabbath", type="concept", labels={"en": "Sabbath"}))
+    graph.add_node(Node(id="abraham", type="person", labels={"en": "Abraham"}))
+
+    result = run_reasoning_loop(
+        graph,
+        FakeCorpus({}),
+        FakeQuranClient({}),
+        FakeLexiconClient({}),
+        "Not YHWH, not Sabbath, not Abraham "
+        "-- tell me about something else entirely, like the Ark of the Covenant.",
+    )
+
+    assert result is None
+
+
+def test_negation_only_suppresses_the_immediately_following_token() -> None:
+    # A negated mention earlier in the sentence shouldn't poison a later,
+    # non-negated real match -- and the negated "yhwh" mention must be
+    # genuinely skippable (registered on the graph) for this test to prove
+    # anything, rather than trivially passing because "yhwh" never matched.
+    graph = KnowledgeGraph()
+    graph.add_node(Node(id="yhwh", type="concept", labels={"en": "YHWH"}))
+    graph.add_node(Node(id="sabbath", type="concept", labels={"en": "Sabbath"}))
+    graph.add_edge(
+        Edge(source_id="sabbath", type="explains", citation="Gen.2.3", citation_type="osis")
+    )
+    corpus = FakeCorpus({("Gen.2.3", "WLC"): "text"})
+
+    result = run_reasoning_loop(
+        graph,
+        corpus,
+        FakeQuranClient({}),
+        FakeLexiconClient({}),
+        "This is not about YHWH, it's about the Sabbath.",
+    )
+
+    assert result is not None
+    assert result.trace.detected_intent.node_id == "sabbath"
+
+
 def test_osis_evidence_resolves_via_wlc(yhwh_graph: KnowledgeGraph) -> None:
     corpus = FakeCorpus({("Exod.3.14", "WLC"): "wlc text"})
     lexicon = FakeLexiconClient({"H3068": make_h3068()})

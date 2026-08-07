@@ -63,6 +63,26 @@ class KnowledgeGraph:
                 seen[edge.source_id] = self.get_node(edge.source_id)
         return list(seen.values())
 
+    def find_by_chapter(self, book: str, chapter: int) -> list[Node]:
+        """Find every node with an OSIS edge citing a verse in `book`/`chapter`.
+
+        Complementary to find_by_citation(): "Genesis 17" (a chapter, no
+        verse) can't equal any single edge's exact citation string, but it
+        should still resolve to whichever node cites a verse within that
+        chapter (e.g. "Gen.17.5" on the abraham node).
+        """
+        prefix = f"{book}.{chapter}."
+        seen: dict[str, Node] = {}
+        for edge in self._edges:
+            if (
+                edge.citation_type == "osis"
+                and edge.citation is not None
+                and edge.citation.startswith(prefix)
+                and edge.source_id not in seen
+            ):
+                seen[edge.source_id] = self.get_node(edge.source_id)
+        return list(seen.values())
+
     def find_by_label(self, label: str) -> list[Node]:
         """Find every node with a label matching `label` in any language, case-insensitively.
 

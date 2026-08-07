@@ -20,7 +20,7 @@ from vahiy_engine.reasoning.trace import (
     RejectedEvidenceItem,
 )
 from vahiy_engine.search.index import STOPWORDS, normalize, tokenize
-from vahiy_engine.search.reference_parser import find_references
+from vahiy_engine.search.reference_parser import find_chapter_references, find_references
 from vahiy_engine.sources.ahit.client import VerseNotFoundError
 from vahiy_engine.sources.client import CorpusClient
 from vahiy_engine.sources.osis import InvalidOsisReferenceError, parse_osis
@@ -104,6 +104,23 @@ def run_reasoning_loop(
     return ReasoningResult(trace=trace, node=node)
 
 
+# A token is skipped, even if it would otherwise match a node label, when
+# the nearest preceding *content* word (stopwords don't break the scope --
+# "not about YHWH" negates "YHWH" just as much as "not YHWH" does) is one of
+# these. Deliberately narrow (a fixed lookback, not general sentiment
+# analysis) rather than a stand-in for real pragmatic reasoning, which is a
+# larger capability this single rule doesn't attempt to substitute for.
+_NEGATION_CUES = frozenset({"not", "değil"})
+
+
+def _is_negated(tokens: list[str], index: int) -> bool:
+    for earlier in range(index - 1, -1, -1):
+        if tokens[earlier] in STOPWORDS:
+            continue
+        return tokens[earlier] in _NEGATION_CUES
+    return False
+
+
 def _detect_intent(graph: KnowledgeGraph, question: str) -> tuple[Node, str] | None:
     # A citation embedded directly in the question ("How does Exodus 3:14
     # explain...") is a more precise signal than any single keyword, and is
@@ -115,8 +132,19 @@ def _detect_intent(graph: KnowledgeGraph, question: str) -> tuple[Node, str] | N
         if matches:
             return matches[0], citation
 
-    for token in tokenize(normalize(question)):
+    # A chapter-only mention ("Genesis 17", no verse) is a weaker signal
+    # than an exact verse citation but still more precise than a bare
+    # keyword, so it's tried next, before falling back to label matching.
+    for book, chapter in find_chapter_references(question):
+        matches = graph.find_by_chapter(book, chapter)
+        if matches:
+            return matches[0], f"{book}.{chapter}"
+
+    tokens = tokenize(normalize(question))
+    for index, token in enumerate(tokens):
         if token in STOPWORDS:
+            continue
+        if _is_negated(tokens, index):
             continue
         matches = graph.find_by_label(token)
         if matches:

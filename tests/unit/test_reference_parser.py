@@ -5,6 +5,7 @@ import pytest
 from vahiy_engine.search.reference_parser import (
     BOOK_ALIASES,
     ReferenceParseError,
+    find_chapter_references,
     find_references,
     parse_reference,
 )
@@ -114,3 +115,27 @@ def test_find_references_does_not_match_a_bare_word_before_a_number_pair() -> No
     # "chapter 3:14" should not spuriously resolve -- only a real book alias
     # from BOOK_ALIASES may anchor a match, never an arbitrary preceding word.
     assert find_references("See chapter 3:14 of the outline.") == []
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        (
+            "How do circumcision requirements compare between Genesis 17 and Islamic practice?",
+            [("Gen", 17)],
+        ),
+        ("Genesis 17 and Exodus 20 both matter here.", [("Gen", 17), ("Exod", 20)]),
+        ("No chapter mentioned here.", []),
+    ],
+)
+def test_find_chapter_references_locates_chapter_only_mentions(
+    text: str, expected: list[tuple[str, int]]
+) -> None:
+    assert find_chapter_references(text) == expected
+
+
+def test_find_chapter_references_does_not_also_match_a_full_verse_reference() -> None:
+    # "Genesis 17:5" should be found by find_references() as a precise verse
+    # citation, not additionally picked up here as a bare "Genesis 17"
+    # chapter mention -- the negative lookahead exists for exactly this.
+    assert find_chapter_references("See Genesis 17:5 for the renaming.") == []

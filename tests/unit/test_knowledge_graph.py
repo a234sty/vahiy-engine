@@ -200,3 +200,65 @@ def test_find_by_citation_deduplicates_two_edges_from_the_same_node() -> None:
     )
 
     assert [n.id for n in graph.find_by_citation("Exod.3.14")] == ["yhwh"]
+
+
+# --- find_by_chapter ---
+
+
+def test_find_by_chapter_returns_the_source_node_of_a_matching_verse_citation() -> None:
+    graph = KnowledgeGraph()
+    graph.add_node(make_node("abraham", type="person", en="Abraham"))
+    graph.add_edge(
+        Edge(
+            source_id="abraham", type="cross_references", citation="Gen.17.5", citation_type="osis"
+        )
+    )
+
+    assert [n.id for n in graph.find_by_chapter("Gen", 17)] == ["abraham"]
+
+
+def test_find_by_chapter_returns_empty_list_for_no_match() -> None:
+    graph = KnowledgeGraph()
+    graph.add_node(make_node("abraham", type="person", en="Abraham"))
+    graph.add_edge(
+        Edge(
+            source_id="abraham", type="cross_references", citation="Gen.17.5", citation_type="osis"
+        )
+    )
+
+    assert graph.find_by_chapter("Gen", 12) == []
+    assert graph.find_by_chapter("Exod", 17) == []
+
+
+def test_find_by_chapter_does_not_match_a_non_osis_citation() -> None:
+    # A Quran citation like "Quran.14.35" must never accidentally satisfy a
+    # "Gen.14" chapter lookup just because the numbers happen to line up.
+    graph = KnowledgeGraph()
+    graph.add_node(make_node("abraham", type="person", en="Abraham"))
+    graph.add_edge(
+        Edge(
+            source_id="abraham",
+            type="cross_references",
+            citation="Quran.14.35",
+            citation_type="quran",
+        )
+    )
+
+    assert graph.find_by_chapter("Gen", 14) == []
+
+
+def test_find_by_chapter_deduplicates_two_edges_in_the_same_chapter() -> None:
+    graph = KnowledgeGraph()
+    graph.add_node(make_node("abraham", type="person", en="Abraham"))
+    graph.add_edge(
+        Edge(
+            source_id="abraham", type="cross_references", citation="Gen.17.5", citation_type="osis"
+        )
+    )
+    graph.add_edge(
+        Edge(
+            source_id="abraham", type="cross_references", citation="Gen.17.9", citation_type="osis"
+        )
+    )
+
+    assert [n.id for n in graph.find_by_chapter("Gen", 17)] == ["abraham"]

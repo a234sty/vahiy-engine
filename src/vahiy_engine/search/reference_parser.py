@@ -21,10 +21,27 @@ _REFERENCE_PATTERN = re.compile(r"^\s*(?P<book>.+?)\s+(?P<chapter>\d+)\s*:\s*(?P
 # group: find_references() scans free text, where an unbounded `.+?` would
 # have no reliable stopping point. Word boundaries keep "Exod" from matching
 # inside an unrelated longer word.
+_BOOK_ALTERNATION = "|".join(
+    sorted((re.escape(alias) for alias in BOOK_ALIASES), key=len, reverse=True)
+)
+
 _EMBEDDED_REFERENCE_PATTERN = re.compile(
-    r"\b(?P<book>"
-    + "|".join(sorted((re.escape(alias) for alias in BOOK_ALIASES), key=len, reverse=True))
-    + r")\b\.?\s+(?P<chapter>\d+)\s*:\s*(?P<verse>\d+)",
+    rf"\b(?P<book>{_BOOK_ALTERNATION})\b\.?\s+(?P<chapter>\d+)\s*:\s*(?P<verse>\d+)",
+    re.IGNORECASE,
+)
+
+# Chapter-only mentions ("Genesis 17", no verse) -- the negative lookahead
+# keeps this from also matching the chapter part of a full "Genesis 17:5"
+# reference, which find_references() already handles more precisely. The
+# chapter digits are an atomic group ((?>...)), not a plain \d+: a plain
+# greedy \d+ backtracks digit-by-digit when the lookahead fails, so
+# "Genesis 17:5" would first try chapter="17" (correctly rejected by the
+# lookahead, since ":5" follows) and then, on backtracking, chapter="1"
+# (accepted, since "7:5" doesn't start with ":") -- silently misreading a
+# precise verse citation as a bogus chapter-1 mention. Atomic grouping
+# commits to the longest digit run and forbids that backtrack.
+_EMBEDDED_CHAPTER_PATTERN = re.compile(
+    rf"\b(?P<book>{_BOOK_ALTERNATION})\b\.?\s+(?P<chapter>(?>\d+))(?!\s*:\s*\d)",
     re.IGNORECASE,
 )
 
@@ -87,3 +104,21 @@ def find_references(text: str) -> list[tuple[str, int, int]]:
         verse = int(match.group("verse"))
         references.append((book, chapter, verse))
     return references
+
+
+def find_chapter_references(text: str) -> list[tuple[str, int]]:
+    """Find every chapter-only Bible reference embedded in free text.
+
+    "How do circumcision requirements compare between Genesis 17 and Islamic
+    practice?" cites a whole chapter, not one verse -- find_references()
+    alone can't match that. A full "Book Ch:V" reference is deliberately
+    excluded here (the negative lookahead in the pattern) since
+    find_references() already resolves that case more precisely; this is
+    only for a chapter mentioned without any verse.
+
+    Returns (book, chapter) tuples in the order they appear, empty if none.
+    """
+    return [
+        (BOOK_ALIASES[match.group("book").lower()], int(match.group("chapter")))
+        for match in _EMBEDDED_CHAPTER_PATTERN.finditer(text)
+    ]
