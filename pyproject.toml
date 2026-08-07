@@ -43,6 +43,14 @@ select = ["E", "F", "I", "UP", "B"]
 [tool.ruff.lint.per-file-ignores]
 # FastAPI's Depends()/Query() default-argument pattern is idiomatic, not a real mutable-default bug.
 "src/vahiy_engine/api/routes/*.py" = ["B008"]
+# These are data files of natural-language question strings, not logic --
+# mechanically line-wrapping a question sentence hurts readability rather
+# than helping it.
+"tests/benchmark/question_bank/theological.py" = ["E501"]
+"tests/benchmark/question_bank/historical.py" = ["E501"]
+"tests/benchmark/question_bank/linguistic.py" = ["E501"]
+"tests/benchmark/question_bank/cross_scripture.py" = ["E501"]
+"tests/benchmark/question_bank/adversarial.py" = ["E501"]
 
 [tool.black]
 line-length = 100
