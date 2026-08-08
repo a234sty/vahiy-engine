@@ -3,7 +3,7 @@
 import math
 from dataclasses import dataclass
 
-from vahiy_engine.search.index import STOPWORDS, IndexedVerse, build_index, normalize, tokenize
+from vahiy_engine.search.index import STOPWORDS, IndexedVerse, get_index, normalize, tokenize
 from vahiy_engine.sources.client import CorpusClient
 from vahiy_engine.sources.models import Verse
 
@@ -14,8 +14,8 @@ class SearchResult:
     score: int
 
 
-def search(corpus: CorpusClient, query: str) -> list[SearchResult]:
-    """Search every verse in the corpus for `query`.
+def search(corpus: CorpusClient, query: str, translation: str | None = None) -> list[SearchResult]:
+    """Search every verse of `translation` (the corpus default when None) for `query`.
 
     Matching has two tiers, tried in order:
 
@@ -43,7 +43,7 @@ def search(corpus: CorpusClient, query: str) -> list[SearchResult]:
     if not normalized_query:
         return []
 
-    index = build_index(corpus)
+    index = list(get_index(corpus, translation))
 
     phrase_matches = _search_by_phrase(index, normalized_query)
     if phrase_matches:

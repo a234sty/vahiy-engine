@@ -14,7 +14,11 @@ from vahiy_engine.pipeline.prompt_builder import (
 )
 from vahiy_engine.providers.llm.base import LLMProvider
 from vahiy_engine.rag.context_builder import build_context
+from vahiy_engine.rag.executor import execute_plan
+from vahiy_engine.rag.planner import RetrievalPlan, plan_retrieval
+from vahiy_engine.rag.reranking import rerank
 from vahiy_engine.rag.retrieval import Source, retrieve
+from vahiy_engine.rag.selection import SelectedEvidence, select_evidence
 from vahiy_engine.reasoning.confidence import calculate_confidence
 from vahiy_engine.reasoning.intent import QuestionAnalysis, analyze_question
 from vahiy_engine.reasoning.loop import run_reasoning_loop
@@ -49,6 +53,13 @@ class ChatResult:
     """Citations the caller's own source filter excluded. Reported rather
     than silently dropped, so a filtered answer stays distinguishable from a
     corpus that simply had nothing on the topic."""
+
+    plan: RetrievalPlan | None = None
+    """The sub-questions the engine decided to ask, and the ones it decided
+    not to ask with the reason. Present so "what did it actually search" is
+    inspectable rather than inferred from the answer."""
+
+    retrieved: SelectedEvidence | None = None
 
     @property
     def primary_evidence(self) -> list[EvidenceItem]:
@@ -109,11 +120,18 @@ def run_chat_pipeline(
     sources = _resolve_sources(corpus, question, limit)
     lexicon_entries = _resolve_lexicon_entries(lexicon, question)
 
+    plan, retrieved = _run_multi_query_retrieval(
+        question, analysis, corpus, quran, graph, preferences
+    )
+
     evidence = build_context(
         sources,
         lexicon_entries,
         primary_evidence=trace.evidence_retrieved if trace is not None else None,
-        coverage_notes=(_coverage_notes(quran, trace, withheld) if graph is not None else None),
+        retrieved_evidence=retrieved.items if retrieved is not None else None,
+        coverage_notes=(
+            _coverage_notes(quran, trace, withheld, plan, retrieved) if graph is not None else None
+        ),
     )
 
     if graph is None:
@@ -141,7 +159,37 @@ def run_chat_pipeline(
         trace=trace,
         analysis=analysis,
         withheld_by_preference=withheld,
+        plan=plan,
+        retrieved=retrieved,
     )
+
+
+def _run_multi_query_retrieval(
+    question: str,
+    analysis: QuestionAnalysis,
+    corpus: CorpusClient,
+    quran: QuranClient | None,
+    graph: KnowledgeGraph | None,
+    preferences: UserPreferences | None,
+) -> tuple[RetrievalPlan | None, SelectedEvidence | None]:
+    """Decompose the question, run every sub-query, rerank and select.
+
+    Gated on `graph` for the same reason the reasoning layer is: callers
+    predating this chain get exactly their previous behavior. Source
+    preferences are applied here too, so an excluded corpus is never even
+    searched rather than being searched and then filtered.
+    """
+    if graph is None:
+        return None, None
+
+    plan = plan_retrieval(question, analysis, corpus, quran)
+    executed = execute_plan(plan, corpus, quran)
+
+    candidates = executed.candidates
+    if preferences is not None and preferences.corpora:
+        candidates = tuple(c for c in candidates if preferences.allows(c.citation_type))
+
+    return plan, select_evidence(rerank(candidates), analysis.depth)
 
 
 def _apply_source_preferences(
@@ -205,6 +253,8 @@ def _coverage_notes(
     quran: QuranClient | None,
     trace: ReasoningTrace | None,
     withheld: tuple[str, ...] = (),
+    plan: RetrievalPlan | None = None,
+    retrieved: SelectedEvidence | None = None,
 ) -> list[str]:
     """State what this deployment can and cannot cite.
 
@@ -243,6 +293,28 @@ def _coverage_notes(
         notes.append(
             f"These curated citations did not resolve against the configured "
             f"corpus and are therefore absent from the evidence above: {unresolved}."
+        )
+
+    if plan is not None:
+        if plan.search_terms:
+            notes.append(
+                "Sub-questions actually issued: "
+                + "; ".join(
+                    f"{sq.id} [{sq.facet.value}] -> " f"{sq.source.value}/{sq.edition or 'default'}"
+                    for sq in plan.subqueries
+                )
+                + ". Search terms extracted from the question: "
+                + ", ".join(plan.search_terms)
+                + "."
+            )
+        for reason in plan.skipped:
+            notes.append(reason)
+
+    if retrieved is not None and retrieved.dropped_for_budget:
+        notes.append(
+            f"{retrieved.dropped_for_budget} further retrieved passage(s) were "
+            "dropped to keep the answer within its depth budget; they were found "
+            "but not shown."
         )
 
     if withheld:

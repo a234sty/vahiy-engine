@@ -34,6 +34,7 @@ def build_context(
     lexicon_entries: list[LexiconEntry] | None = None,
     primary_evidence: list[EvidenceItem] | None = None,
     coverage_notes: list[str] | None = None,
+    retrieved_evidence: tuple[EvidenceItem, ...] | None = None,
 ) -> str:
     """Render retrieved sources and reasoning evidence into a single,
     provider-independent plain-text context.
@@ -64,6 +65,9 @@ def build_context(
 
     if primary_evidence:
         blocks.append(_render_primary_evidence(primary_evidence))
+
+    if retrieved_evidence:
+        blocks.append(_render_retrieved_evidence(retrieved_evidence))
 
     if sources:
         supporting = [_render_source(source) for source in sources]
@@ -105,6 +109,24 @@ def _render_primary_evidence(evidence: list[EvidenceItem]) -> str:
             )
         if item.note:
             lines.append(f"  Why this citation is attached: {item.note}")
+    return "\n".join(lines)
+
+
+def _render_retrieved_evidence(evidence: tuple[EvidenceItem, ...]) -> str:
+    """Passages found by the planned sub-questions.
+
+    Labeled separately from both tiers around it: unlike primary evidence
+    nobody verified these are about the concept, and unlike the flat keyword
+    block each one records which sub-question found it and in which corpus,
+    so a comparative answer can tell its Qur'anic evidence from its biblical
+    evidence without inferring it from the citation format.
+    """
+    lines = ["=== RETRIEVED EVIDENCE (found by the planned sub-questions) ==="]
+    for item in evidence:
+        corpus = _CORPUS_LABELS.get(item.citation_type, item.citation_type)
+        lines.append(f"\n[{item.citation}] ({corpus})\n{item.text}")
+        if item.note:
+            lines.append(f"  {item.note}")
     return "\n".join(lines)
 
 

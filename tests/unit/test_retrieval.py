@@ -19,7 +19,7 @@ class FakeCorpus(CorpusClient):
     def get_verse(self, reference: OsisReference) -> Verse:
         raise NotImplementedError
 
-    def iter_verses(self) -> Iterator[Verse]:
+    def iter_verses(self, translation: str | None = None) -> Iterator[Verse]:
         yield from self._verses
 
 

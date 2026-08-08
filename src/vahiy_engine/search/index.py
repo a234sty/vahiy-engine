@@ -3,6 +3,7 @@
 import re
 import unicodedata
 from dataclasses import dataclass
+from functools import lru_cache
 
 from vahiy_engine.sources.client import CorpusClient
 from vahiy_engine.sources.models import Verse
@@ -138,6 +139,30 @@ class IndexedVerse:
     normalized_text: str
 
 
-def build_index(corpus: CorpusClient) -> list[IndexedVerse]:
-    """Build a normalized, deterministically ordered index of every verse in the corpus."""
-    return [IndexedVerse(verse=v, normalized_text=normalize(v.text)) for v in corpus.iter_verses()]
+def build_index(corpus: CorpusClient, translation: str | None = None) -> list[IndexedVerse]:
+    """Build a normalized, deterministically ordered index of every verse in
+    `translation` (the corpus default when None)."""
+    return [
+        IndexedVerse(verse=v, normalized_text=normalize(v.text))
+        for v in corpus.iter_verses(translation=translation)
+    ]
+
+
+@lru_cache(maxsize=8)
+def get_index(corpus: CorpusClient, translation: str | None = None) -> tuple[IndexedVerse, ...]:
+    """The index for `translation`, built once per (corpus, translation).
+
+    Building one is genuinely expensive at real corpus size -- normalizing
+    31,103 Turkish verses takes about a second -- and a single question now
+    issues several sub-queries, several of which hit the same translation.
+    Without this the retrieval chain would rebuild the same index three or
+    four times per request, which measurably does not work rather than
+    merely being untidy.
+
+    Returns a tuple because the cached value is shared across callers and
+    must not be mutable. Corpus clients are cached singletons
+    (`get_ahit_client`), so identity-keyed caching is stable in the request
+    path; test doubles are per-test objects and simply get their own small
+    entries.
+    """
+    return tuple(build_index(corpus, translation))
