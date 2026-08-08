@@ -3,6 +3,7 @@
 from vahiy_engine.lexicon.models import LexiconEntry
 from vahiy_engine.rag.context_builder import build_context
 from vahiy_engine.rag.retrieval import Source
+from vahiy_engine.reasoning.trace import EvidenceItem
 
 
 def make_source(osis: str, text: str, score: int = 1) -> Source:
@@ -154,3 +155,95 @@ def test_build_context_multiple_lexicon_entries_each_get_their_own_block() -> No
     assert len(blocks) == 2
     assert "G3056" in blocks[0]
     assert "H1" in blocks[1]
+
+
+# --- Evidence tiering, original-language rendering, and coverage limits ---
+
+
+def make_evidence(
+    citation: str = "Exod.3.14",
+    citation_type: str = "osis",
+    text: str = "I AM THAT I AM",
+    **kwargs: object,
+) -> EvidenceItem:
+    return EvidenceItem(citation=citation, citation_type=citation_type, text=text, **kwargs)
+
+
+def test_primary_evidence_is_labeled_and_rendered_before_keyword_sources() -> None:
+    context = build_context(
+        [make_source("Gen.1.1", "keyword hit")],
+        primary_evidence=[make_evidence()],
+    )
+
+    assert context.index("PRIMARY EVIDENCE") < context.index("SUPPORTING EVIDENCE")
+    assert context.index("I AM THAT I AM") < context.index("keyword hit")
+
+
+def test_keyword_sources_are_not_labeled_supporting_when_no_reasoning_ran() -> None:
+    # Without primary evidence there is no tier to contrast against, and a
+    # "supporting" heading would imply a distinction that was never made.
+    context = build_context([make_source("Gen.1.1", "text")])
+
+    assert "SUPPORTING EVIDENCE" not in context
+    assert "PRIMARY EVIDENCE" not in context
+
+
+def test_each_primary_citation_is_labeled_with_its_corpus() -> None:
+    context = build_context(
+        [],
+        primary_evidence=[
+            make_evidence(citation="Gen.12.1", citation_type="osis", text="bible text"),
+            make_evidence(citation="Quran.14.35", citation_type="quran", text="ayah text"),
+            make_evidence(citation="Strong:H3068", citation_type="strongs", text="lemma"),
+        ],
+    )
+
+    assert "[Gen.12.1] (Bible)" in context
+    assert "[Quran.14.35] (Qur'an)" in context
+    assert "[Strong:H3068] (Lexicon (Strong's))" in context
+
+
+def test_original_language_is_rendered_alongside_the_translation() -> None:
+    context = build_context(
+        [],
+        primary_evidence=[
+            make_evidence(
+                text="Tanrı Moşe'ye dedi",
+                original_text="אֶֽהְיֶ֖ה אֲשֶׁ֣ר אֶֽהְיֶ֑ה",
+                original_language="Hebrew",
+            )
+        ],
+    )
+
+    assert "Tanrı Moşe'ye dedi" in context
+    assert "Hebrew (source text): אֶֽהְיֶ֖ה אֲשֶׁ֣ר אֶֽהְיֶ֑ה" in context
+
+
+def test_source_language_only_evidence_is_flagged_as_not_a_translation() -> None:
+    # When the corpus has no translation, the quoted text *is* the Hebrew;
+    # saying so keeps the model from presenting it as a rendering.
+    context = build_context(
+        [],
+        primary_evidence=[make_evidence(text="וַ/יֹּ֤אמֶר", original_language="Hebrew")],
+    )
+
+    assert "the Hebrew source text" in context
+    assert "source text): " not in context
+
+
+def test_coverage_notes_are_rendered_as_their_own_labeled_block() -> None:
+    context = build_context([], coverage_notes=["No hadith corpus is configured."])
+
+    assert "COVERAGE LIMITS" in context
+    assert "- No hadith corpus is configured." in context
+
+
+def test_context_is_unchanged_when_no_reasoning_arguments_are_passed() -> None:
+    # The reasoning layer is additive: existing callers must get byte-identical
+    # output, not merely equivalent output.
+    sources = [make_source("Gen.1.1", "In the beginning")]
+    entries = [make_lexicon_entry()]
+
+    assert build_context(sources, entries) == build_context(
+        sources, entries, primary_evidence=None, coverage_notes=None
+    )

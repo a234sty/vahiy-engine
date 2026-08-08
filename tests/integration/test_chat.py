@@ -5,8 +5,15 @@ from collections.abc import Iterator
 import pytest
 from fastapi.testclient import TestClient
 
-from vahiy_engine.api.routes.chat import get_lexicon_client, get_llm_provider
+from vahiy_engine.api.routes.chat import (
+    get_knowledge_graph,
+    get_lexicon_client,
+    get_llm_provider,
+    get_quran_client,
+)
 from vahiy_engine.config import settings
+from vahiy_engine.knowledge_graph.graph import KnowledgeGraph
+from vahiy_engine.knowledge_graph.models import Edge, Node
 from vahiy_engine.lexicon.client import LexiconClient
 from vahiy_engine.lexicon.models import LexiconEntry
 from vahiy_engine.main import app
@@ -196,3 +203,81 @@ def test_post_chat_no_matching_lexicon_term_returns_empty_list() -> None:
     response = client.post("/chat", json={"message": "beginning"})
 
     assert response.json()["lexicon_sources"] == []
+
+
+# --- Reasoning provenance on the response envelope ---
+
+
+def test_chat_response_carries_confidence_and_reasoning_provenance() -> None:
+    """A matched concept must surface its confidence derivation and the
+    pipeline identity that produced it, so an answer can be re-derived and
+    checked rather than taken on trust."""
+    graph = KnowledgeGraph()
+    graph.add_node(Node(id="abraham", type="person", labels={"en": "Abraham"}))
+    graph.add_edge(
+        Edge(
+            source_id="abraham",
+            type="cross_references",
+            citation="Quran.14.35",
+            citation_type="quran",
+        )
+    )
+
+    app.dependency_overrides[get_llm_provider] = lambda: FakeProvider()
+    app.dependency_overrides[get_knowledge_graph] = lambda: graph
+    app.dependency_overrides[get_quran_client] = lambda: _StubQuran()
+    try:
+        response = client.post("/chat", json={"message": "Who is Abraham?"})
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    body = response.json()
+
+    assert body["quran_sources"] == [
+        {
+            "citation": "Quran.14.35",
+            "surah": 14,
+            "ayah": 35,
+            "text": "And when Abraham said...",
+        }
+    ]
+    assert body["confidence"]["level"] == "low"
+    assert body["confidence"]["resolved_count"] == 1
+    assert body["confidence"]["evidence_types"] == ["quran"]
+    assert body["confidence"]["derivation"]
+    assert body["reasoning"]["matched_concept"] == "abraham"
+    assert body["reasoning"]["matched_on"] == "abraham"
+    assert body["reasoning"]["pipeline_id"]
+    assert body["reasoning"]["constitution_version"]
+
+
+def test_chat_response_omits_reasoning_fields_when_no_concept_matches() -> None:
+    """No match is an ordinary outcome, not an error: the answer still comes
+    back, with the reasoning fields explicitly absent rather than faked."""
+    app.dependency_overrides[get_llm_provider] = lambda: FakeProvider()
+    app.dependency_overrides[get_knowledge_graph] = KnowledgeGraph
+    try:
+        response = client.post("/chat", json={"message": "unmatched question here"})
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["answer"] == "fake answer"
+    assert body["confidence"] is None
+    assert body["reasoning"] is None
+    assert body["quran_sources"] == []
+
+
+class _StubQuran:
+    def available_editions(self) -> list[str]:
+        return ["en"]
+
+    def get_ayah(self, reference, edition=None):  # type: ignore[no-untyped-def]
+        from vahiy_engine.sources.quran.models import Ayah
+
+        return Ayah(surah=reference.surah, ayah=reference.ayah, text="And when Abraham said...")
+
+    def iter_ayat(self, edition=None):  # type: ignore[no-untyped-def]
+        return iter([])

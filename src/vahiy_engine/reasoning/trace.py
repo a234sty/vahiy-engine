@@ -20,13 +20,24 @@ class ConfidenceTier(StrEnum):
 
 
 class EvidenceItem(BaseModel):
-    """One piece of evidence that was actually resolved and used."""
+    """One piece of evidence that was actually resolved and used.
+
+    `text` is the readable rendering an answer can quote. `original_text`,
+    when the corpus has one, is the same passage in its source language --
+    carried alongside rather than instead of the translation, because an
+    answer that shows only pointed Hebrew forces the model to translate it
+    itself, and an answer that shows only a translation cannot support a
+    claim about the original wording. Both present means neither has to be
+    invented.
+    """
 
     citation: str
     citation_type: str
     text: str
     role: str = "primary"
     note: str | None = None
+    original_text: str | None = None
+    original_language: str | None = None
 
 
 class RejectedEvidenceItem(BaseModel):

@@ -56,6 +56,17 @@ class QuranClient:
             )
         return ayat[key]
 
+    def available_editions(self) -> list[str]:
+        """Which editions this client can actually serve, in registration order.
+
+        Public because callers need to state honestly what this deployment
+        does and does not have: a client with zero editions is a valid state
+        (see the class docstring), and the difference between "the Qur'an has
+        nothing on this" and "no Qur'an corpus is configured here" is exactly
+        the kind of distinction this engine must not blur.
+        """
+        return list(self._editions)
+
     def iter_ayat(self, edition: str | None = None) -> Iterator[Ayah]:
         edition_id = edition or self._default_edition
         ayat = self._load(edition_id)

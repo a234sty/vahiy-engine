@@ -17,8 +17,24 @@ exist to prevent. When that corpus exists, this seed data grows to cite it;
 until then, the gap is disclosed, not papered over.
 """
 
+from functools import lru_cache
+
 from vahiy_engine.knowledge_graph.graph import KnowledgeGraph
 from vahiy_engine.knowledge_graph.models import Edge, Node
+
+
+@lru_cache
+def get_knowledge_graph() -> KnowledgeGraph:
+    """The process-wide seed graph, built once.
+
+    Mirrors `get_ahit_client()` / `get_lexicon_client()` / `get_quran_client()`:
+    the request path needs a graph on every call and rebuilding it per request
+    would be pure waste. Safe to share because the reasoning loop only ever
+    reads from it (`find_by_*`, `edges_from`, `get_node`) -- nothing mutates a
+    graph after construction. Tests that need an isolated, mutable graph call
+    `build_seed_graph()` directly instead.
+    """
+    return build_seed_graph()
 
 
 def build_seed_graph() -> KnowledgeGraph:

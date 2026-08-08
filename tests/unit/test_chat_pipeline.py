@@ -115,7 +115,7 @@ def test_run_chat_pipeline_calls_components_in_order_with_correct_arguments() ->
 
     assert manager.mock_calls == [
         call.retrieve(corpus, "What is logos?", 3),
-        call.build_context(sources, []),
+        call.build_context(sources, [], primary_evidence=None, coverage_notes=None),
         call.generate_answer(DEFAULT_SYSTEM_PROMPT, "What is logos?", "built context"),
     ]
     assert result == ChatResult(answer="The answer.", sources=sources)
@@ -190,6 +190,8 @@ def test_run_chat_pipeline_reference_input_resolves_via_get_verse_and_skips_retr
             )
         ],
         [],
+        primary_evidence=None,
+        coverage_notes=None,
     )
 
 
@@ -359,7 +361,9 @@ def test_run_chat_pipeline_passes_matched_lexicon_entry_to_build_context() -> No
     ):
         result = run_chat_pipeline(MagicMock(), provider, "What is logos?", lexicon=MagicMock())
 
-    mock_build_context.assert_called_once_with([], [entry])
+    mock_build_context.assert_called_once_with(
+        [], [entry], primary_evidence=None, coverage_notes=None
+    )
     assert result.lexicon_entries == [entry]
 
 
@@ -376,7 +380,7 @@ def test_run_chat_pipeline_no_lexicon_match_passes_empty_list() -> None:
     ):
         result = run_chat_pipeline(MagicMock(), provider, "no match", lexicon=MagicMock())
 
-    mock_build_context.assert_called_once_with([], [])
+    mock_build_context.assert_called_once_with([], [], primary_evidence=None, coverage_notes=None)
     assert result.lexicon_entries == []
 
 

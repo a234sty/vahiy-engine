@@ -23,7 +23,7 @@ from vahiy_engine.search.index import STOPWORDS, normalize, tokenize
 from vahiy_engine.search.reference_parser import find_chapter_references, find_references
 from vahiy_engine.sources.ahit.client import VerseNotFoundError
 from vahiy_engine.sources.client import CorpusClient
-from vahiy_engine.sources.osis import InvalidOsisReferenceError, parse_osis
+from vahiy_engine.sources.osis import InvalidOsisReferenceError, OsisReference, parse_osis
 from vahiy_engine.sources.quran.client import AyahNotFoundError, QuranClient
 from vahiy_engine.sources.quran.models import QuranReference
 
@@ -31,12 +31,20 @@ PIPELINE_ID = "PIPE-concept_lookup-v0"
 PIPELINE_VERSION = "0.1.0"
 CONSTITUTION_VERSION = "0.2.0"
 
-# OSIS-addressed evidence lives in one of these translations, depending on
-# testament; tried in this fixed order since a given OSIS reference only
-# ever resolves in one of them (WLC is Old Testament, SBLGNT is New
-# Testament — they don't overlap), so the order is a determinism choice,
-# not a preference ranking.
-_OSIS_TRANSLATIONS_TO_TRY: tuple[str | None, ...] = ("WLC", "SBLGNT", None)
+# Readable renderings, tried in this fixed order, for the text an answer can
+# actually quote. YTC leads because it is the only translation in the
+# configured corpus that covers both testaments; the rest are fallbacks for
+# deployments carrying different translations. Order is fixed rather than
+# scored so the same question yields the same evidence on every run.
+_READABLE_TRANSLATIONS: tuple[str | None, ...] = ("YTC", "KJV", None)
+
+# Source-language witnesses. A given OSIS reference resolves in at most one
+# of these -- WLC is Hebrew Old Testament, SBLGNT is Greek New Testament,
+# and they do not overlap -- so this is a lookup, not a ranking.
+_ORIGINAL_LANGUAGE_TRANSLATIONS: tuple[tuple[str, str], ...] = (
+    ("WLC", "Hebrew"),
+    ("SBLGNT", "Greek"),
+)
 
 
 class ReasoningResult:
@@ -165,20 +173,66 @@ def _resolve_citation(
 
 
 def _resolve_osis(edge: Edge, corpus: CorpusClient) -> EvidenceItem | None:
+    """Resolve one OSIS citation into a readable text plus, where the corpus
+    has it, the same verse in its source language.
+
+    Falls back to the source-language text as the readable text when no
+    translation resolves: an answer quoting pointed Hebrew is worse than one
+    quoting a translation, but far better than silently dropping a citation
+    the knowledge graph verified.
+    """
     try:
         reference = parse_osis(edge.citation)
     except InvalidOsisReferenceError:
         return None
 
-    for translation in _OSIS_TRANSLATIONS_TO_TRY:
+    original_text, original_language = _resolve_original_language(reference, corpus)
+
+    readable = _first_resolving(reference, corpus, _READABLE_TRANSLATIONS)
+    if readable is None:
+        if original_text is None:
+            return None
+        # Only a source-language witness exists; use it as the quotable text
+        # and don't also repeat it as the "original", which would render the
+        # same string twice.
+        return EvidenceItem(
+            citation=edge.citation,
+            citation_type="osis",
+            text=original_text,
+            note=edge.note,
+            original_language=original_language,
+        )
+
+    return EvidenceItem(
+        citation=edge.citation,
+        citation_type="osis",
+        text=readable,
+        note=edge.note,
+        original_text=original_text,
+        original_language=original_language,
+    )
+
+
+def _first_resolving(
+    reference: OsisReference, corpus: CorpusClient, translations: tuple[str | None, ...]
+) -> str | None:
+    for translation in translations:
         try:
-            verse = corpus.get_verse(reference, translation=translation)
+            return corpus.get_verse(reference, translation=translation).text
         except (VerseNotFoundError, FileNotFoundError, LookupError):
             continue
-        return EvidenceItem(
-            citation=edge.citation, citation_type="osis", text=verse.text, note=edge.note
-        )
     return None
+
+
+def _resolve_original_language(
+    reference: OsisReference, corpus: CorpusClient
+) -> tuple[str | None, str | None]:
+    for translation, language in _ORIGINAL_LANGUAGE_TRANSLATIONS:
+        try:
+            return corpus.get_verse(reference, translation=translation).text, language
+        except (VerseNotFoundError, FileNotFoundError, LookupError):
+            continue
+    return None, None
 
 
 def _resolve_quran(edge: Edge, quran: QuranClient) -> EvidenceItem | None:
