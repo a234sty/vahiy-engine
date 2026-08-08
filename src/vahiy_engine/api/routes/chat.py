@@ -5,6 +5,8 @@ from fastapi import APIRouter, Depends
 from vahiy_engine.api.schemas.chat import (
     ChatConfidence,
     ChatLexiconSourceItem,
+    ChatPreferences,
+    ChatQuestionAnalysis,
     ChatQuranSourceItem,
     ChatReasoning,
     ChatRequest,
@@ -15,8 +17,10 @@ from vahiy_engine.knowledge_graph.graph import KnowledgeGraph
 from vahiy_engine.knowledge_graph.seed_data import get_knowledge_graph
 from vahiy_engine.lexicon.ahit.client import AhitLexiconClient, get_lexicon_client
 from vahiy_engine.pipeline.chat_pipeline import ChatResult, run_chat_pipeline
-from vahiy_engine.providers.llm import get_llm_provider
+from vahiy_engine.pipeline.prompt_builder import AnswerFormat, Corpus, UserPreferences
+from vahiy_engine.providers.llm import get_llm_provider, tier_model_for
 from vahiy_engine.providers.llm.base import LLMProvider
+from vahiy_engine.reasoning.intent import Complexity, analyze_question
 from vahiy_engine.sources.ahit.client import AhitCorpusClient, get_ahit_client
 from vahiy_engine.sources.quran.client import QuranClient, get_quran_client
 
@@ -32,8 +36,18 @@ async def post_chat(
     quran: QuranClient = Depends(get_quran_client),
     graph: KnowledgeGraph = Depends(get_knowledge_graph),
 ) -> ChatResponse:
+    provider = _tier(provider, analyze_question(request.message).complexity)
+
     result = run_chat_pipeline(
-        corpus, provider, request.message, lexicon=lexicon, quran=quran, graph=graph
+        corpus,
+        provider,
+        request.message,
+        lexicon=lexicon,
+        quran=quran,
+        graph=graph,
+        preferences=_preferences(request.preferences),
+        conversation_context=request.conversation_context,
+        answer_format=AnswerFormat(request.answer_format),
     )
 
     return ChatResponse(
@@ -61,6 +75,36 @@ async def post_chat(
         quran_sources=_quran_sources(result),
         confidence=_confidence(result),
         reasoning=_reasoning(result),
+        analysis=_analysis(result),
+        withheld_by_preference=list(result.withheld_by_preference),
+    )
+
+
+def _tier(default: LLMProvider, complexity: Complexity) -> LLMProvider:
+    """Swap in a complexity-matched model, but only where one is configured.
+
+    Which model to use depends on the question: a verse lookup and a
+    cross-scripture comparison should not cost the same. But the provider is
+    still injected normally, and this returns it untouched when the
+    deployment configures no tier for this complexity -- so tiering is an
+    opt-in refinement rather than a bypass of dependency injection, and an
+    overridden provider (in tests, or any caller supplying its own) is never
+    silently discarded.
+    """
+    if tier_model_for(complexity) is None:
+        return default
+    return get_llm_provider(complexity)
+
+
+def _preferences(preferences: ChatPreferences | None) -> UserPreferences | None:
+    if preferences is None:
+        return None
+    return UserPreferences(
+        corpora=tuple(Corpus(c) for c in preferences.corpora),
+        traditions=tuple(preferences.traditions),
+        translation=preferences.translation,
+        source_priority=tuple(preferences.source_priority),
+        notes=preferences.notes,
     )
 
 
@@ -82,6 +126,8 @@ def _quran_sources(result: ChatResult) -> list[ChatQuranSourceItem]:
                 surah=int(surah),
                 ayah=int(ayah),
                 text=evidence.text,
+                original_text=evidence.original_text,
+                transliteration=evidence.transliteration,
             )
         )
     return items
@@ -111,4 +157,17 @@ def _reasoning(result: ChatResult) -> ChatReasoning | None:
         pipeline_version=trace.pipeline.pipeline_version,
         constitution_version=trace.pipeline.constitution_version,
         unresolved_citations=[item.citation for item in trace.evidence_rejected],
+    )
+
+
+def _analysis(result: ChatResult) -> ChatQuestionAnalysis | None:
+    if result.analysis is None:
+        return None
+    analysis = result.analysis
+    return ChatQuestionAnalysis(
+        intent=analysis.intent.value,
+        depth=analysis.depth.value,
+        complexity=analysis.complexity.value,
+        language=analysis.language,
+        signals=list(analysis.signals),
     )

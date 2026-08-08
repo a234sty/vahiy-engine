@@ -240,6 +240,8 @@ def test_chat_response_carries_confidence_and_reasoning_provenance() -> None:
             "surah": 14,
             "ayah": 35,
             "text": "And when Abraham said...",
+            "original_text": "وَإِذْ قَالَ إِبْرَاهِيمُ",
+            "transliteration": "Waith qala ibraheemu",
         }
     ]
     assert body["confidence"]["level"] == "low"
@@ -275,9 +277,22 @@ class _StubQuran:
         return ["en"]
 
     def get_ayah(self, reference, edition=None):  # type: ignore[no-untyped-def]
+        # Edition-distinct, like the real corpus: the engine carries the
+        # translation, the Arabic and the transliteration separately, and a
+        # stub returning one string for all three would hide that.
         from vahiy_engine.sources.quran.models import Ayah
 
-        return Ayah(surah=reference.surah, ayah=reference.ayah, text="And when Abraham said...")
+        texts = {
+            "en": "And when Abraham said...",
+            "tr": "İbrahim şöyle demişti...",
+            "arabic": "وَإِذْ قَالَ إِبْرَاهِيمُ",
+            "transliteration": "Waith qala ibraheemu",
+        }
+        return Ayah(
+            surah=reference.surah,
+            ayah=reference.ayah,
+            text=texts.get(edition or "en", texts["en"]),
+        )
 
     def iter_ayat(self, edition=None):  # type: ignore[no-untyped-def]
         return iter([])

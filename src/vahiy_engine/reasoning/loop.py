@@ -38,6 +38,18 @@ CONSTITUTION_VERSION = "0.2.0"
 # scored so the same question yields the same evidence on every run.
 _READABLE_TRANSLATIONS: tuple[str | None, ...] = ("YTC", "KJV", None)
 
+
+def _readable_translations(language: str) -> tuple[str | None, ...]:
+    """Translations in preference order for `language`.
+
+    The corpus currently carries YTC (Turkish) across both testaments and
+    little else, so both orders resolve to it today; the ordering exists so
+    that adding an English translation later changes behavior by data
+    rather than by code.
+    """
+    return ("KJV", "YTC", None) if language == "en" else ("YTC", "KJV", None)
+
+
 # Source-language witnesses. A given OSIS reference resolves in at most one
 # of these -- WLC is Hebrew Old Testament, SBLGNT is Greek New Testament,
 # and they do not overlap -- so this is a lookup, not a ranking.
@@ -62,6 +74,7 @@ def run_reasoning_loop(
     quran: QuranClient,
     lexicon: LexiconClient,
     question: str,
+    language: str = "en",
 ) -> ReasoningResult | None:
     """Run the full loop for `question`, or return None if no Knowledge
     Graph node matches — the caller falls back to non-KG handling."""
@@ -81,7 +94,7 @@ def run_reasoning_loop(
             # -- counting it twice would inflate resolved_count and skew
             # confidence toward a stronger corroboration than actually exists.
             continue
-        item = _resolve_citation(edge, corpus, quran, lexicon)
+        item = _resolve_citation(edge, corpus, quran, lexicon, language)
         if item is not None:
             resolved_by_citation[edge.citation] = item
         else:
@@ -161,18 +174,22 @@ def _detect_intent(graph: KnowledgeGraph, question: str) -> tuple[Node, str] | N
 
 
 def _resolve_citation(
-    edge: Edge, corpus: CorpusClient, quran: QuranClient, lexicon: LexiconClient
+    edge: Edge,
+    corpus: CorpusClient,
+    quran: QuranClient,
+    lexicon: LexiconClient,
+    language: str = "en",
 ) -> EvidenceItem | None:
     if edge.citation_type == "osis":
-        return _resolve_osis(edge, corpus)
+        return _resolve_osis(edge, corpus, language)
     if edge.citation_type == "quran":
-        return _resolve_quran(edge, quran)
+        return _resolve_quran(edge, quran, language)
     if edge.citation_type == "strongs":
         return _resolve_strongs(edge, lexicon)
     return None
 
 
-def _resolve_osis(edge: Edge, corpus: CorpusClient) -> EvidenceItem | None:
+def _resolve_osis(edge: Edge, corpus: CorpusClient, language: str = "en") -> EvidenceItem | None:
     """Resolve one OSIS citation into a readable text plus, where the corpus
     has it, the same verse in its source language.
 
@@ -188,7 +205,7 @@ def _resolve_osis(edge: Edge, corpus: CorpusClient) -> EvidenceItem | None:
 
     original_text, original_language = _resolve_original_language(reference, corpus)
 
-    readable = _first_resolving(reference, corpus, _READABLE_TRANSLATIONS)
+    readable = _first_resolving(reference, corpus, _readable_translations(language))
     if readable is None:
         if original_text is None:
             return None
@@ -235,17 +252,62 @@ def _resolve_original_language(
     return None, None
 
 
-def _resolve_quran(edge: Edge, quran: QuranClient) -> EvidenceItem | None:
+def _resolve_quran(edge: Edge, quran: QuranClient, language: str = "en") -> EvidenceItem | None:
+    """Resolve one Qur'an citation into a readable translation plus, where
+    the corpus has them, the Arabic original and its transliteration.
+
+    Previously this tried only the English edition, which silently discarded
+    the Arabic, the Turkish and the transliteration the corpus actually
+    ships -- so an answer could never quote the Qur'an in its own language,
+    and a Turkish user got English. Found by listing the editions rather
+    than trusting the resolution order.
+    """
     _, surah, ayah = edge.citation.split(".")
     reference = QuranReference(surah=int(surah), ayah=int(ayah))
-    for edition in ("en", None):
+
+    readable = _first_ayah(quran, reference, _readable_quran_editions(language))
+    original = _first_ayah(quran, reference, ("arabic",))
+    transliteration = _first_ayah(quran, reference, ("transliteration",))
+
+    text = readable or original
+    if text is None:
+        return None
+
+    # Only carry the alternates that actually differ from the quoted text.
+    # A deployment whose editions overlap (or a partially populated corpus)
+    # would otherwise render the same string three times under three labels,
+    # which reads as three independent witnesses rather than one.
+    return EvidenceItem(
+        citation=edge.citation,
+        citation_type="quran",
+        text=text,
+        note=edge.note,
+        original_text=original if original is not None and original != text else None,
+        original_language="Arabic" if original is not None and original != text else None,
+        transliteration=(
+            transliteration if transliteration is not None and transliteration != text else None
+        ),
+    )
+
+
+def _readable_quran_editions(language: str) -> tuple[str, ...]:
+    """Translation editions in preference order for `language`.
+
+    The user's own language leads; the other is kept as a fallback so a
+    missing edition degrades to a translation the reader can still use
+    rather than to untransliterated Arabic.
+    """
+    return ("tr", "en") if language == "tr" else ("en", "tr")
+
+
+def _first_ayah(
+    quran: QuranClient, reference: QuranReference, editions: tuple[str, ...]
+) -> str | None:
+    for edition in editions:
         try:
-            resolved_ayah = quran.get_ayah(reference, edition=edition)
+            return quran.get_ayah(reference, edition=edition).text
         except (AyahNotFoundError, LookupError):
             continue
-        return EvidenceItem(
-            citation=edge.citation, citation_type="quran", text=resolved_ayah.text, note=edge.note
-        )
     return None
 
 

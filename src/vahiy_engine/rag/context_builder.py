@@ -94,6 +94,8 @@ def _render_primary_evidence(evidence: list[EvidenceItem]) -> str:
         if item.original_text:
             language = item.original_language or "original language"
             lines.append(f"  {language} (source text): {item.original_text}")
+        if item.transliteration:
+            lines.append(f"  Transliteration: {item.transliteration}")
         elif item.original_language:
             # The quoted text above *is* the source-language witness; say so,
             # so the model doesn't present it as a translation.

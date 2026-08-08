@@ -10,7 +10,6 @@ from vahiy_engine.lexicon.models import LexiconEntry
 from vahiy_engine.pipeline.chat_pipeline import (
     DEFAULT_LIMIT,
     DEFAULT_SYSTEM_PROMPT,
-    ChatResult,
     run_chat_pipeline,
 )
 from vahiy_engine.providers.llm.base import LLMProvider
@@ -74,13 +73,16 @@ def test_default_system_prompt_is_loaded_from_the_prompt_file_not_empty() -> Non
 
 
 def test_default_system_prompt_forbids_favoring_any_tradition() -> None:
-    assert "never favor any religion" in DEFAULT_SYSTEM_PROMPT.lower()
+    lowered = DEFAULT_SYSTEM_PROMPT.lower()
+    assert "do not privilege one tradition" in lowered
+    assert "do not merge traditions into one vague summary" in lowered
 
 
 def test_default_system_prompt_requires_grounding_in_provided_context() -> None:
     lowered = DEFAULT_SYSTEM_PROMPT.lower()
-    assert "context" in lowered
-    assert "never invent a verse" in lowered
+    assert "retrieved evidence" in lowered
+    assert "never invent sources, quotations, verses" in lowered
+    assert "coverage limits" in lowered
 
 
 def test_default_system_prompt_requires_bilingual_turkish_english_output() -> None:
@@ -118,7 +120,11 @@ def test_run_chat_pipeline_calls_components_in_order_with_correct_arguments() ->
         call.build_context(sources, [], primary_evidence=None, coverage_notes=None),
         call.generate_answer(DEFAULT_SYSTEM_PROMPT, "What is logos?", "built context"),
     ]
-    assert result == ChatResult(answer="The answer.", sources=sources)
+    # Compared field-by-field rather than whole-object: ChatResult also
+    # carries the question analysis, which this test is not about.
+    assert result.answer == "The answer."
+    assert result.sources == sources
+    assert result.trace is None
 
 
 def test_run_chat_pipeline_uses_default_limit_when_not_specified() -> None:

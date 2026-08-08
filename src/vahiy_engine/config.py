@@ -27,6 +27,17 @@ class Settings(BaseSettings):
     gemini_api_key: str | None = Field(default=None, validation_alias="GEMINI_API_KEY")
     gemini_model: str = Field(default="gemini-2.5-flash", validation_alias="GEMINI_MODEL")
 
+    # Cost/quality tiers. A question the analyzer marks SIMPLE (a verse
+    # lookup) does not need the model a DEEP comparative question needs, and
+    # billing every question at the deep tier is the single largest avoidable
+    # cost in this pipeline. Left unset, both fall back to the provider's
+    # default model above, so tiering is opt-in per deployment rather than a
+    # behavior change forced on existing ones.
+    openai_model_fast: str | None = Field(default=None, validation_alias="OPENAI_MODEL_FAST")
+    openai_model_deep: str | None = Field(default=None, validation_alias="OPENAI_MODEL_DEEP")
+    gemini_model_fast: str | None = Field(default=None, validation_alias="GEMINI_MODEL_FAST")
+    gemini_model_deep: str | None = Field(default=None, validation_alias="GEMINI_MODEL_DEEP")
+
     # How long a single LLM provider call may run before failing with a clean
     # LLMProviderError (-> 502) instead of hanging until an external proxy
     # kills the connection with an opaque 504.

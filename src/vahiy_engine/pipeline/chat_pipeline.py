@@ -6,9 +6,17 @@ from dataclasses import dataclass, field
 from vahiy_engine.knowledge_graph.graph import KnowledgeGraph
 from vahiy_engine.lexicon.client import LexiconClient
 from vahiy_engine.lexicon.models import LexiconEntry
+from vahiy_engine.pipeline.prompt_builder import (
+    AnswerFormat,
+    PromptInputs,
+    UserPreferences,
+    build_user_prompt,
+)
 from vahiy_engine.providers.llm.base import LLMProvider
 from vahiy_engine.rag.context_builder import build_context
 from vahiy_engine.rag.retrieval import Source, retrieve
+from vahiy_engine.reasoning.confidence import calculate_confidence
+from vahiy_engine.reasoning.intent import QuestionAnalysis, analyze_question
 from vahiy_engine.reasoning.loop import run_reasoning_loop
 from vahiy_engine.reasoning.trace import EvidenceItem, ReasoningTrace
 from vahiy_engine.search.lexicon_lookup import find_lexicon_term
@@ -36,6 +44,11 @@ class ChatResult:
     sources: list[Source]
     lexicon_entries: list[LexiconEntry] = field(default_factory=list)
     trace: ReasoningTrace | None = None
+    analysis: QuestionAnalysis | None = None
+    withheld_by_preference: tuple[str, ...] = ()
+    """Citations the caller's own source filter excluded. Reported rather
+    than silently dropped, so a filtered answer stays distinguishable from a
+    corpus that simply had nothing on the topic."""
 
     @property
     def primary_evidence(self) -> list[EvidenceItem]:
@@ -53,6 +66,9 @@ def run_chat_pipeline(
     lexicon: LexiconClient | None = None,
     quran: QuranClient | None = None,
     graph: KnowledgeGraph | None = None,
+    preferences: UserPreferences | None = None,
+    conversation_context: str | None = None,
+    answer_format: AnswerFormat = AnswerFormat.MARKDOWN,
 ) -> ChatResult:
     """Answer `question` using retrieval-augmented generation over `corpus`.
 
@@ -86,19 +102,79 @@ def run_chat_pipeline(
     Has no FastAPI dependency and carries no state between calls — each call is
     independent, with no conversation memory.
     """
-    trace = _run_reasoning(graph, corpus, quran, lexicon, question)
+    analysis = analyze_question(question)
+    trace = _run_reasoning(graph, corpus, quran, lexicon, question, analysis.language)
+    trace, withheld = _apply_source_preferences(trace, preferences)
+
     sources = _resolve_sources(corpus, question, limit)
     lexicon_entries = _resolve_lexicon_entries(lexicon, question)
 
-    context = build_context(
+    evidence = build_context(
         sources,
         lexicon_entries,
         primary_evidence=trace.evidence_retrieved if trace is not None else None,
-        coverage_notes=_coverage_notes(quran, trace) if graph is not None else None,
+        coverage_notes=(_coverage_notes(quran, trace, withheld) if graph is not None else None),
     )
+
+    if graph is None:
+        # No reasoning layer wired up: keep the original, untemplated user
+        # turn so callers predating the prompt contract see no change.
+        context = evidence
+    else:
+        context = build_user_prompt(
+            PromptInputs(
+                question=question,
+                analysis=analysis,
+                evidence=evidence,
+                preferences=preferences or UserPreferences(),
+                conversation_context=conversation_context,
+                answer_format=answer_format,
+            )
+        )
+
     answer = provider.generate_answer(system_prompt, question, context)
 
-    return ChatResult(answer=answer, sources=sources, lexicon_entries=lexicon_entries, trace=trace)
+    return ChatResult(
+        answer=answer,
+        sources=sources,
+        lexicon_entries=lexicon_entries,
+        trace=trace,
+        analysis=analysis,
+        withheld_by_preference=withheld,
+    )
+
+
+def _apply_source_preferences(
+    trace: ReasoningTrace | None, preferences: UserPreferences | None
+) -> tuple[ReasoningTrace | None, tuple[str, ...]]:
+    """Filter curated evidence down to the source families the caller allowed.
+
+    This is what keeps a source preference from being a menu item that
+    changes nothing: excluded citations are removed from the evidence the
+    model ever sees, and their identifiers are returned so the exclusion can
+    be disclosed instead of looking like absence.
+    """
+    if trace is None or preferences is None or not preferences.corpora:
+        return trace, ()
+
+    kept = [item for item in trace.evidence_retrieved if preferences.allows(item.citation_type)]
+    withheld = tuple(
+        item.citation
+        for item in trace.evidence_retrieved
+        if not preferences.allows(item.citation_type)
+    )
+    if not withheld:
+        return trace, ()
+
+    return (
+        trace.model_copy(
+            update={
+                "evidence_retrieved": kept,
+                "confidence": calculate_confidence(kept, list(trace.evidence_rejected)),
+            }
+        ),
+        withheld,
+    )
 
 
 def _run_reasoning(
@@ -107,6 +183,7 @@ def _run_reasoning(
     quran: QuranClient | None,
     lexicon: LexiconClient | None,
     question: str,
+    language: str,
 ) -> ReasoningTrace | None:
     """Run RSN-2's loop when every dependency it needs is wired up.
 
@@ -120,11 +197,15 @@ def _run_reasoning(
     if graph is None or quran is None or lexicon is None:
         return None
 
-    result = run_reasoning_loop(graph, corpus, quran, lexicon, question)
+    result = run_reasoning_loop(graph, corpus, quran, lexicon, question, language)
     return result.trace if result is not None else None
 
 
-def _coverage_notes(quran: QuranClient | None, trace: ReasoningTrace | None) -> list[str]:
+def _coverage_notes(
+    quran: QuranClient | None,
+    trace: ReasoningTrace | None,
+    withheld: tuple[str, ...] = (),
+) -> list[str]:
     """State what this deployment can and cannot cite.
 
     Derived from live client state rather than hardcoded, so it stays true as
@@ -162,6 +243,13 @@ def _coverage_notes(quran: QuranClient | None, trace: ReasoningTrace | None) -> 
         notes.append(
             f"These curated citations did not resolve against the configured "
             f"corpus and are therefore absent from the evidence above: {unresolved}."
+        )
+
+    if withheld:
+        notes.append(
+            "Your source filter excluded these citations, which the knowledge "
+            "graph does hold for this question: " + ", ".join(withheld) + ". "
+            "Their absence is the filter's doing, not the corpus's."
         )
 
     return notes

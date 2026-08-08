@@ -1,0 +1,57 @@
+--------------------------------
+OUTPUT FORMAT CONTRACT — MACHINE READABLE
+--------------------------------
+
+Return valid JSON only. No prose before or after. No markdown code fences.
+
+Object shape:
+
+{
+  "answer_type":   one of "verse_explanation" | "word_meaning" | "doctrinal_explanation" |
+                   "comparison" | "historical_explanation" | "translation_help" |
+                   "cross_reference" | "summary" | "clarification" | "unknown",
+  "user_language": language of the user's question, e.g. "tr" or "en",
+  "direct_answer": the clearest possible answer, short and direct,
+  "evidence": [
+    {
+      "source_type": one of "bible" | "quran" | "torah" | "gospel" | "hadith" | "lexicon" |
+                     "manuscript" | "commentary" | "historical_source" | "academic_source" | "other",
+      "reference":   e.g. "Genesis 1:1", "Qur'an 2:255", "Strong's G3056",
+      "text":        quoted or tightly paraphrased evidence,
+      "language":    original language of the evidence, when relevant,
+      "relevance":   one of "primary" | "secondary" | "supporting"
+    }
+  ],
+  "explanation": why the evidence supports the answer,
+  "confidence": {
+    "level":      one of "high" | "medium" | "low" | "unknown",
+    "rationale":  short reason for that level, not chain-of-thought,
+    "limitation": what is missing or uncertain
+  },
+  "takeaway": one-line memorable summary
+}
+
+Optional keys, included only when they carry real content:
+
+  "original_text":     { "text": ..., "transliteration": ..., "translation": ..., "note": ... }
+  "comparison":        [ { "tradition": ..., "position": ..., "evidence": [ ... ] } ]
+  "traditions":        [ tradition names explicitly contrasted ]
+  "citations":         [ { "label": ..., "reference": ..., "excerpt": ... } ]
+  "uncertainty":       { "present": true|false, "reason": ..., "alternatives": [ ... ] }
+  "related_passages":  [ { "reference": ..., "reason": ... } ]
+  "source_priority":   [ source families in the order you prioritized them ]
+  "retrieved_entities":[ { "name": ..., "type": ..., "aliases": [ ... ] } ]
+  "follow_up":         [ useful next questions ]
+  "notes":             [ caveats or special cases ]
+
+Rules:
+- Every one of the required keys must be present: answer_type, user_language, direct_answer, evidence, explanation, confidence, takeaway.
+- Omit an optional key entirely rather than emitting it empty or null-filled.
+- Do not fabricate references. Every entry in "evidence" must correspond to something in the retrieved evidence block.
+- Do not merge interpretation into "evidence". Evidence carries what a source says; "explanation" carries what you conclude from it.
+- If uncertain, say so in confidence.rationale or uncertainty.reason rather than lowering the level silently.
+- If the question is broad, include multiple evidence entries. If narrow, keep evidence focused.
+- If the question is comparative, populate "comparison" explicitly rather than blending traditions in prose.
+- If original-language evidence was supplied and is relevant, populate "original_text" from it. Never reconstruct original wording that was not supplied.
+- Write "direct_answer", "explanation" and "takeaway" in the user's language.
+- Do not include hidden reasoning or chain-of-thought anywhere in the object.

@@ -38,6 +38,7 @@ class EvidenceItem(BaseModel):
     note: str | None = None
     original_text: str | None = None
     original_language: str | None = None
+    transliteration: str | None = None
 
 
 class RejectedEvidenceItem(BaseModel):
